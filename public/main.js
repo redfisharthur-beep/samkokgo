@@ -289,9 +289,13 @@ function updateLiuBeiFacing(visual) {
   while (relative > Math.PI) relative -= Math.PI * 2;
   while (relative < -Math.PI) relative += Math.PI * 2;
   const step = Math.PI / 4;
-  const octant = Math.round(relative / step);
+  const nextOctant = Math.round(relative / step);
+  if (visual.spriteOctant === undefined) visual.spriteOctant = ((nextOctant % 8) + 8) % 8;
+  const currentCenter = visual.spriteOctant * step;
+  const angleFromCurrent = Math.atan2(Math.sin(relative - currentCenter), Math.cos(relative - currentCenter));
+  if (Math.abs(angleFromCurrent) > step / 2 + .07) visual.spriteOctant = ((nextOctant % 8) + 8) % 8;
   const viewsByOctant = ["front", "frontRight", "right", "backRight", "back", "backLeft", "left", "frontLeft"];
-  const view = viewsByOctant[((octant % 8) + 8) % 8];
+  const view = viewsByOctant[visual.spriteOctant];
   if (visual.spriteView !== view) {
     visual.spriteView = view;
     visual.sprite.material.map = liuBeiTextures[view];
