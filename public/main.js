@@ -90,7 +90,8 @@ world.add(floor);
 buildMapDecor();
 
 const liuBeiTextureLoader = new THREE.TextureLoader();
-const liuBeiTextures = Object.fromEntries(["front", "right", "back", "left"].map((view) => {
+const liuBeiViews = ["front", "frontRight", "right", "backRight", "back", "backLeft", "left", "frontLeft"];
+const liuBeiTextures = Object.fromEntries(liuBeiViews.map((view) => {
   const texture = liuBeiTextureLoader.load(`/assets/characters/liubei/${view}.svg`);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
@@ -287,8 +288,10 @@ function updateLiuBeiFacing(visual) {
   let relative = visual.group.rotation.y - toCamera;
   while (relative > Math.PI) relative -= Math.PI * 2;
   while (relative < -Math.PI) relative += Math.PI * 2;
-  const angle = Math.abs(relative);
-  const view = angle < Math.PI / 4 ? "front" : angle < Math.PI * 3 / 4 ? (relative > 0 ? "right" : "left") : "back";
+  const step = Math.PI / 4;
+  const octant = Math.round(relative / step);
+  const viewsByOctant = ["front", "frontRight", "right", "backRight", "back", "backLeft", "left", "frontLeft"];
+  const view = viewsByOctant[((octant % 8) + 8) % 8];
   if (visual.spriteView !== view) {
     visual.spriteView = view;
     visual.sprite.material.map = liuBeiTextures[view];
