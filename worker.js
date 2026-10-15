@@ -179,6 +179,12 @@ export class GameHub extends DurableObject {
       }
       return;
     }
+    if (message.type === "attack-fx" && attachment.playerId === room.hostId && room.status === "playing") {
+      const from = sanitizePoint(message.from);
+      const to = sanitizePoint(message.to);
+      if (from && to) this.broadcast(room.id, { type: "attack-fx", from, to }, socket);
+      return;
+    }
     if (message.type === "ability" && room.status === "playing") {
       this.broadcast(room.id, {
         type: "ability",
@@ -310,6 +316,13 @@ function tagFor(roomId) { return `room:${roomId}`; }
 function sanitizeHeroId(heroId) { return ["liubei", "caocao", "sunquan", "lvbu"].includes(heroId) ? heroId : "liubei"; }
 function sanitizeMapId(mapId) { return ["forest", "camp", "city"].includes(mapId) ? mapId : "forest"; }
 function sanitizeDifficulty(difficulty) { return ["easy", "normal", "hard"].includes(difficulty) ? difficulty : "normal"; }
+function sanitizePoint(value) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    x: clampNumber(value.x, -WORLD_LIMIT, WORLD_LIMIT),
+    z: clampNumber(value.z, -WORLD_DEPTH_LIMIT, WORLD_DEPTH_LIMIT)
+  };
+}
 function clampNumber(value, min, max) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : 0;
