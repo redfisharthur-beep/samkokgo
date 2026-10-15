@@ -98,6 +98,13 @@ const liuBeiTextures = Object.fromEntries(liuBeiViews.map((view) => {
   texture.magFilter = THREE.LinearFilter;
   return [view, texture];
 }));
+const liuBeiLegendTextures = Object.fromEntries(liuBeiViews.map((view) => {
+  const texture = liuBeiTextureLoader.load(`/assets/characters/liubei/legend-${view}.svg`);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  return [view, texture];
+}));
 
 let localPlayer = makeWarrior(HEROES[appState.heroId]?.color ?? COLORS[0], true, appState.heroId);
 localPlayer.group.position.set(0, 0, 0);
@@ -352,9 +359,12 @@ function updateLiuBeiFacing(visual) {
   if (Math.abs(angleFromCurrent) > step / 2 + .07) visual.spriteOctant = ((nextOctant % 8) + 8) % 8;
   const viewsByOctant = ["front", "frontRight", "right", "backRight", "back", "backLeft", "left", "frontLeft"];
   const view = viewsByOctant[visual.spriteOctant];
-  if (visual.spriteView !== view) {
+  const playerId = visual.playerId ?? appState.selfId;
+  const tier = (appState.playerProgress[playerId]?.level ?? 1) >= 10 ? "legend" : "base";
+  if (visual.spriteView !== view || visual.spriteTier !== tier) {
     visual.spriteView = view;
-    visual.sprite.material.map = liuBeiTextures[view];
+    visual.spriteTier = tier;
+    visual.sprite.material.map = (tier === "legend" ? liuBeiLegendTextures : liuBeiTextures)[view];
     visual.sprite.material.needsUpdate = true;
   }
 }
