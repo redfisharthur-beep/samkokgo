@@ -14,6 +14,7 @@ const MAPS = {
 };
 const MAP_ORDER = ["forest", "camp", "city"];
 const DIFFICULTIES = ["easy", "normal", "hard"];
+const PIXEL_SKIN_COLORS = new Set([0xd6b99d, 0xcdb59e, 0xd7bda3, 0xd2b196, 0xc5a58d, 0xc9aa91, 0xcdb39a, 0xc8aa91, 0xb8957f]);
 const WORLD = { x: 48, z: 27 };
 const ROUND_SECONDS = 12 * 60;
 const $ = (id) => document.getElementById(id);
@@ -30,11 +31,76 @@ const ui = {
   soundToggle: $("soundToggle"), soundToggleHud: $("soundToggleHud")
 };
 const UPGRADE_OPTIONS = {
-  power: { label: "攻擊", max: 5, icon: '<path d="M8 40 27 21m-9-9 18 18M25 9l5-5 14 14-5 5M8 29l11 11-7 4-8-8Z"/>' },
-  tempo: { label: "攻速", max: 5, icon: '<path d="M7 16a18 18 0 1 1-1 15M7 8v9h9M24 12v12l8 5"/>' },
-  reach: { label: "射程", max: 5, icon: '<circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="9"/><path d="M24 4v7m0 26v7M4 24h7m26 0h7"/>' },
-  speed: { label: "移速", max: 5, icon: '<path d="M5 30h7l4-16 8 20 4-12 4 8h11M8 10l5-5m4 5 5-5"/>' }
+  power: { label: "攻擊", max: 5 },
+  tempo: { label: "攻速", max: 5 },
+  reach: { label: "射程", max: 5 },
+  speed: { label: "移速", max: 5 }
 };
+
+function drawPixelIcon(canvas, kind) {
+  canvas.width = canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  const C = { bg: "#e7dfca", shade: "#c5b99e", dark: "#454a43", ink: "#5a5549", gold: "#c2a56f", light: "#f3ead3", steel: "#82918b", clay: "#b77b6d", moss: "#718779", blue: "#8097a0" };
+  const p = (x, y, color) => { ctx.fillStyle = color; ctx.fillRect(x * 8, y * 8, 8, 8); };
+  const rect = (x, y, w, h, color) => { ctx.fillStyle = color; ctx.fillRect(x * 8, y * 8, w * 8, h * 8); };
+  rect(0, 0, 16, 16, C.bg);
+  rect(0, 0, 16, 1, C.shade); rect(0, 15, 16, 1, C.shade); rect(0, 0, 1, 16, C.shade); rect(15, 0, 1, 16, C.shade);
+  for (let i = 2; i < 14; i += 4) { p(i, 2, C.light); p(13, i, C.shade); }
+  if (kind === "power") {
+    [[9,2],[8,3],[7,4],[6,5],[5,6],[4,7],[3,8]].forEach(([x,y]) => p(x,y,C.light));
+    [[10,2],[9,3],[8,4],[7,5],[6,6],[5,7],[4,8]].forEach(([x,y]) => p(x,y,C.gold));
+    [[11,2],[10,3],[9,4],[8,5],[7,6],[6,7],[5,8]].forEach(([x,y]) => p(x,y,C.steel));
+    rect(3, 9, 6, 1, C.dark); rect(5, 10, 2, 3, C.ink); rect(4, 13, 4, 1, C.dark); rect(5, 13, 2, 1, C.gold);
+  } else if (kind === "tempo") {
+    rect(4, 2, 8, 1, C.dark); rect(3, 3, 1, 2, C.dark); rect(12, 3, 1, 2, C.dark);
+    rect(2, 5, 1, 6, C.dark); rect(13, 5, 1, 6, C.dark); rect(3, 11, 1, 2, C.dark); rect(12, 11, 1, 2, C.dark); rect(4, 13, 8, 1, C.dark);
+    rect(4, 4, 8, 8, C.light); rect(7, 5, 2, 4, C.clay); rect(8, 8, 4, 2, C.clay); p(11,8,C.gold);
+    rect(5, 2, 6, 1, C.gold); rect(3, 6, 1, 4, C.blue); rect(12, 6, 1, 4, C.blue);
+  } else if (kind === "reach") {
+    rect(3, 3, 10, 1, C.dark); rect(3, 12, 10, 1, C.dark); rect(3, 4, 1, 8, C.dark); rect(12, 4, 1, 8, C.dark);
+    rect(5, 5, 6, 1, C.clay); rect(5, 10, 6, 1, C.clay); rect(5, 6, 1, 4, C.clay); rect(10, 6, 1, 4, C.clay);
+    rect(7, 7, 2, 2, C.gold); p(7,4,C.light); p(7,11,C.light); p(4,7,C.light); p(11,7,C.light);
+    rect(1, 7, 3, 1, C.steel); rect(12, 7, 3, 1, C.steel); rect(7, 1, 1, 3, C.steel); rect(7, 12, 1, 3, C.steel);
+  } else if (kind === "special") {
+    rect(7, 1, 2, 2, C.light); rect(6, 3, 4, 2, C.gold); rect(4, 5, 8, 2, C.clay);
+    rect(2, 7, 12, 2, C.gold); rect(4, 9, 8, 2, C.clay); rect(6, 11, 4, 2, C.gold); rect(7, 13, 2, 1, C.light);
+    p(4,3,C.blue); p(11,3,C.blue); p(3,11,C.moss); p(12,11,C.moss); p(2,4,C.light); p(13,4,C.light);
+  } else {
+    rect(3, 4, 4, 2, C.dark); rect(2, 6, 6, 2, C.dark); rect(3, 8, 8, 2, C.dark); rect(5, 10, 7, 2, C.dark); rect(8, 12, 5, 1, C.dark);
+    rect(4, 5, 2, 1, C.moss); rect(3, 7, 4, 1, C.moss); rect(5, 9, 5, 1, C.gold); rect(8, 11, 3, 1, C.clay);
+    rect(1, 5, 2, 1, C.blue); rect(1, 8, 2, 1, C.blue); rect(2, 11, 2, 1, C.blue); rect(11, 3, 2, 1, C.light);
+  }
+}
+
+function pixelIcon(kind, className = "pixel-icon") {
+  const canvas = document.createElement("canvas");
+  canvas.className = className;
+  canvas.setAttribute("aria-hidden", "true");
+  drawPixelIcon(canvas, kind);
+  return canvas;
+}
+
+let skillIconSignature = null;
+function renderSkillIcons() {
+  const upgrades = appState.playerProgress[appState.selfId]?.upgrades ?? {};
+  const signature = Object.keys(UPGRADE_OPTIONS).map((kind) => upgrades[kind] ?? 0).join(":");
+  if (signature === skillIconSignature) return;
+  skillIconSignature = signature;
+  ui.skillRow.replaceChildren();
+  for (const [kind, upgrade] of Object.entries(UPGRADE_OPTIONS)) {
+    const rank = upgrades[kind] ?? 0;
+    const token = document.createElement("span");
+    token.className = `skill-token${rank ? " unlocked" : ""}`;
+    token.title = `${upgrade.label}${rank ? ` ${rank}/${upgrade.max}` : ""}`;
+    token.setAttribute("aria-label", token.title);
+    token.append(pixelIcon(kind, "pixel-icon"));
+    const level = document.createElement("b");
+    level.textContent = rank ? String(rank) : "";
+    token.append(level);
+    ui.skillRow.append(token);
+  }
+}
 
 const appState = {
   screen: "home", roomId: null, room: null, selfId: null, host: false,
@@ -89,6 +155,45 @@ floor.receiveShadow = true;
 world.add(floor);
 const blockGeometryCache = new Map();
 const blockMaterialCache = new Map();
+const pixelTextureCache = new Map();
+function pixelTexture(kind = "cloth", variant = 0) {
+  const cacheKey = `${kind}:${variant}`;
+  if (pixelTextureCache.has(cacheKey)) return pixelTextureCache.get(cacheKey);
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  const seedByKind = { cloth: 17, armor: 31, stone: 47, wood: 59, grass: 71, skin: 83 };
+  let seed = ((seedByKind[kind] ?? 101) + Number(variant)) >>> 0;
+  const random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  ctx.fillStyle = "#f4f1e8";
+  ctx.fillRect(0, 0, 128, 128);
+  const shades = { cloth: [220, 248], armor: [203, 252], stone: [214, 248], wood: [213, 248], grass: [217, 249], skin: [229, 253] }[kind] ?? [218, 249];
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const value = Math.round(shades[0] + random() * (shades[1] - shades[0]));
+    ctx.fillStyle = `rgb(${value},${value},${value})`;
+    ctx.fillRect(x * 8, y * 8, 8, 8);
+    if (kind === "armor" && y % 4 === 0 && x % 4 !== 0) {
+      ctx.fillStyle = `rgb(${Math.min(255, value + 5)},${Math.min(255, value + 5)},${Math.min(255, value + 5)})`;
+      ctx.fillRect(x * 8 + 2, y * 8 + 2, 4, 2);
+    }
+    if (kind === "cloth" && y % 5 === 2 && x % 4 === 1) {
+      ctx.fillStyle = `rgb(${Math.max(0, value - 8)},${Math.max(0, value - 8)},${Math.max(0, value - 8)})`;
+      ctx.fillRect(x * 8, y * 8 + 6, 8, 2);
+    }
+    if ((kind === "stone" || kind === "grass") && random() > .91) {
+      ctx.fillStyle = `rgb(${Math.max(0, value - 12)},${Math.max(0, value - 12)},${Math.max(0, value - 12)})`;
+      ctx.fillRect(x * 8 + 2, y * 8 + 2, 3, 3);
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestMipmapNearestFilter;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.generateMipmaps = true;
+  pixelTextureCache.set(cacheKey, texture);
+  return texture;
+}
 function blockGeometry(width, height, depth) {
   const key = `${width}|${height}|${depth}`;
   if (!blockGeometryCache.has(key)) blockGeometryCache.set(key, new THREE.BoxGeometry(width, height, depth));
@@ -96,7 +201,9 @@ function blockGeometry(width, height, depth) {
 }
 function addBlock(parent, size, color, position, materialOptions = {}) {
   const options = { color, roughness: .82, metalness: .02, ...materialOptions };
-  const key = Object.entries(options).sort(([a], [b]) => a.localeCompare(b)).map(([name, value]) => `${name}:${value}`).join("|");
+  const textureKind = options.metalness > .1 ? "armor" : PIXEL_SKIN_COLORS.has(color) ? "skin" : color === 0x9b8063 || color === 0x8b745c || color === 0x746954 ? "wood" : options.roughness >= .95 ? "stone" : "cloth";
+  options.map = pixelTexture(textureKind, color);
+  const key = `${textureKind}|${Object.entries(options).filter(([name]) => name !== "map").sort(([a], [b]) => a.localeCompare(b)).map(([name, value]) => `${name}:${value}`).join("|")}`;
   if (!blockMaterialCache.has(key)) blockMaterialCache.set(key, new THREE.MeshStandardMaterial(options));
   const material = blockMaterialCache.get(key);
   const mesh = new THREE.Mesh(blockGeometry(...size), material);
@@ -124,24 +231,32 @@ function buildMapDecor() {
   mapDecor.traverse((object) => {
     if (object.geometry && ![...blockGeometryCache.values()].includes(object.geometry)) object.geometry.dispose();
     if (object.material) for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+      if (material.map && ![...pixelTextureCache.values()].includes(material.map)) material.map.dispose();
       if (![...blockMaterialCache.values()].includes(material)) material.dispose();
     }
   });
   mapDecor = new THREE.Group();
   const palette = MAPS[appState.mapId] ?? MAPS.forest;
   floor.material.color.setHex(palette.ground);
+  floor.material.map = pixelTexture("grass", palette.ground);
+  floor.material.map.repeat.set(WORLD.x / 3, WORLD.z / 3);
+  floor.material.map.needsUpdate = true;
   scene.background.setHex(palette.sky);
   scene.fog.color.setHex(palette.sky);
   const path = new THREE.Mesh(
     new THREE.PlaneGeometry(26, WORLD.z * 2),
-    new THREE.MeshStandardMaterial({ color: palette.path, roughness: 1 })
+    new THREE.MeshStandardMaterial({ color: palette.path, roughness: 1, map: pixelTexture("stone", palette.path) })
   );
+  path.material.map.repeat.set(26 / 3, WORLD.z / 3);
   path.rotation.x = -Math.PI / 2;
   path.position.y = 0.015;
   path.receiveShadow = true;
   mapDecor.add(path);
   const crossPath = path.clone();
   crossPath.geometry = new THREE.PlaneGeometry(WORLD.x * 2, 16);
+  crossPath.material = path.material.clone();
+  crossPath.material.map = path.material.map.clone();
+  crossPath.material.map.repeat.set(WORLD.x / 3, 16 / 3);
   crossPath.rotation.x = -Math.PI / 2;
   mapDecor.add(crossPath);
 
@@ -449,7 +564,10 @@ function renderLevelChoice(progress) {
     const button = document.createElement("button");
     button.className = "upgrade-card";
     button.setAttribute("aria-label", `${upgrade.label}強化，${rank + 1}級`);
-    button.innerHTML = `<svg viewBox="0 0 48 48" aria-hidden="true">${upgrade.icon}</svg><i>${Array.from({ length: upgrade.max }, (_, index) => `<b class="${index < rank + 1 ? "on" : ""}"></b>`).join("")}</i>`;
+    button.append(pixelIcon(id, "pixel-icon upgrade-pixel-icon"));
+    const pips = document.createElement("i");
+    pips.innerHTML = Array.from({ length: upgrade.max }, (_, index) => `<b class="${index < rank + 1 ? "on" : ""}"></b>`).join("");
+    button.append(pips);
     button.addEventListener("click", () => {
       if (appState.socket?.readyState !== WebSocket.OPEN) return;
       ui.levelChoice.classList.add("hidden");
@@ -610,10 +728,22 @@ function showRunTrail(x, z, heroId) {
 function createPickup(position, id = null, type = "energy") {
   const group = new THREE.Group();
   const color = type === "heal" ? 0xb77b6d : 0xc2a56f;
-  const material = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: .28, roughness: .45, metalness: .08 });
-  const core = new THREE.Mesh(new THREE.OctahedronGeometry(.42, 0), material);
+  const core = new THREE.Group();
+  if (type === "heal") {
+    addBlock(core, [.56, .64, .42], 0xe4d8c0, [0, 0, 0], { metalness: .02 });
+    addBlock(core, [.34, .2, .34], 0xa8ad8c, [0, .42, 0]);
+    addBlock(core, [.22, .22, .47], 0xb77b6d, [0, .02, .23]);
+    addBlock(core, [.46, .22, .2], 0xb77b6d, [0, .02, .14]);
+    addBlock(core, [.4, .08, .46], 0xc1a978, [0, -.32, 0], { metalness: .12 });
+  } else {
+    addBlock(core, [.66, .44, .48], 0xa4895e, [0, -.04, 0], { metalness: .1 });
+    addBlock(core, [.72, .16, .54], 0xc2a56f, [0, .22, 0], { metalness: .16 });
+    addBlock(core, [.22, .42, .09], 0x798779, [0, .07, .28]);
+    addBlock(core, [.22, .42, .09], 0x798779, [0, .07, -.28]);
+    addBlock(core, [.28, .16, .12], 0xe4d8c0, [0, .07, .34]);
+  }
+  core.traverse((node) => { if (node.isMesh) node.castShadow = true; });
   core.position.y = 1.05;
-  core.castShadow = true;
   group.add(core);
   const ring = new THREE.Mesh(new THREE.TorusGeometry(.62, .055, 6, 24), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: .82 }));
   ring.rotation.x = -Math.PI / 2;
@@ -628,8 +758,6 @@ function createPickup(position, id = null, type = "energy") {
 
 function removePickup(pickup) {
   pickupGroup.remove(pickup.group);
-  pickup.core.geometry.dispose();
-  pickup.core.material.dispose();
   pickup.ring.geometry.dispose();
   pickup.ring.material.dispose();
 }
@@ -715,6 +843,7 @@ function renderVitals() {
   ui.specialAbility.disabled = !ready || appState.abilityPending || appState.socket?.readyState !== WebSocket.OPEN;
   ui.specialAbility.classList.toggle("ready", ready && !appState.abilityPending);
   ui.specialAbility.setAttribute("aria-label", ready ? "範圍絕技，能量已滿" : "範圍絕技，能量未滿");
+  renderSkillIcons();
 }
 
 function setAudioEnabled(enabled) {
@@ -954,12 +1083,6 @@ function applyGameState(state) {
   renderVitals();
   const xpThreshold = 5 + ((ownProgress?.level ?? appState.level) - 1) * 2;
   ui.xpFill.style.width = `${Math.min(100, appState.xp / xpThreshold * 100)}%`;
-  const skillCount = Math.min(6, 2 + appState.level);
-  if (ui.skillRow.children.length !== skillCount) {
-    ui.skillRow.replaceChildren(...Array.from({ length: skillCount }, () => {
-      const token = document.createElement("span"); token.className = "skill-token"; return token;
-    }));
-  }
   renderLevelChoice(ownProgress);
   for (const [playerId, vital] of Object.entries(appState.playerVitals)) {
     if (playerId === appState.selfId) {
@@ -1154,9 +1277,6 @@ function clearRun() {
   ui.levelChoice.classList.add("hidden");
   ui.bossHealth.classList.add("hidden");
   ui.xpFill.style.width = "12%";
-  ui.skillRow.replaceChildren(...Array.from({ length: 3 }, () => {
-    const token = document.createElement("span"); token.className = "skill-token"; return token;
-  }));
   renderVitals();
 }
 
@@ -1552,12 +1672,6 @@ function updateCombat(now, delta) {
   }
 }
 
-function addSkillToken() {
-  if (ui.skillRow.children.length < 6) {
-    const token = document.createElement("span"); token.className = "skill-token"; ui.skillRow.append(token);
-  }
-}
-
 function finishRun(win) {
   if (appState.screen !== "game") return;
   playSound(win ? "win" : "loss");
@@ -1699,6 +1813,7 @@ function sendRoomAction(type, extra = {}) {
 
 window.addEventListener("resize", onResize);
 installControls();
+ui.specialAbility.replaceChildren(pixelIcon("special", "special-pixel-icon"));
 setHero(appState.heroId);
 setAudioEnabled(audioEnabled);
 clearRun();
