@@ -976,11 +976,8 @@ function applyGameState(state) {
     seen.add(snapshot.id);
     let enemy = appState.enemies.find((item) => item.group.userData.id === snapshot.id);
     if (!enemy) enemy = createEnemy({ x: snapshot.x, z: snapshot.z }, snapshot.id, snapshot.hp, snapshot.elite, snapshot.kind, snapshot.bossIndex);
-    const stepX = snapshot.x - enemy.group.position.x;
-    const stepZ = snapshot.z - enemy.group.position.z;
-    enemy.moving = Math.hypot(stepX, stepZ) > .025;
-    if (enemy.moving) enemy.group.rotation.y = Math.atan2(stepX, stepZ);
-    enemy.group.position.set(snapshot.x, 0, snapshot.z);
+    enemy.targetPosition = new THREE.Vector3(snapshot.x, 0, snapshot.z);
+    if (appState.host) enemy.group.position.copy(enemy.targetPosition);
     enemy.group.userData.hp = snapshot.hp;
     enemy.group.userData.elite = Boolean(snapshot.elite);
     enemy.group.userData.kind = snapshot.kind ?? (snapshot.elite ? "elite" : "grunt");
@@ -1493,6 +1490,16 @@ function updateCombat(now, delta) {
     }
     const vitals = party.map((player) => ensureVital(player.id));
     if (vitals.length && vitals.every((vital) => vital.downed || vital.eliminated)) finishRun(false);
+  }
+  if (!appState.host) {
+    for (const enemy of appState.enemies) {
+      if (!enemy.targetPosition) continue;
+      const dx = enemy.targetPosition.x - enemy.group.position.x;
+      const dz = enemy.targetPosition.z - enemy.group.position.z;
+      enemy.moving = Math.hypot(dx, dz) > .035;
+      if (enemy.moving) enemy.group.rotation.y = Math.atan2(dx, dz);
+      enemy.group.position.lerp(enemy.targetPosition, 1 - Math.exp(-delta * 14));
+    }
   }
   for (const projectile of appState.projectiles) {
     projectile.elapsed += delta;
