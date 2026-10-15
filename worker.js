@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 
 const MAX_PLAYERS = 6;
+const ROUND_SECONDS = 12 * 60;
 const WORLD_LIMIT = 48;
 const WORLD_DEPTH_LIMIT = 27;
 
@@ -50,9 +51,12 @@ export class GameHub extends DurableObject {
     const rooms = (await this.ctx.storage.get("rooms")) ?? {};
     const visible = [];
     for (const room of Object.values(rooms)) {
-      const players = this.ctx.getWebSockets(tagFor(room.id)).length;
-      if (room.status === "waiting" && !room.locked && players < room.maxPlayers) {
-        visible.push({ id: room.id, players, maxPlayers: room.maxPlayers });
+      this.cleanDisconnected(room);
+      const connected = this.ctx.getWebSockets(tagFor(room.id)).length;
+      const players = connected + Object.keys(room.disconnected ?? {}).length;
+      if (connected === 0) continue;
+      if (this.canJoinPlaying(room) && !room.locked && players < room.maxPlayers) {
+        visible.push({ id: room.id, players, maxPlayers: room.maxPlayers, mapId: room.mapId, difficulty: room.difficulty, status: room.status });
       }
     }
     return visible.sort((a, b) => b.players - a.players).slice(0, 20);
@@ -68,6 +72,9 @@ export class GameHub extends DurableObject {
       status: "waiting",
       hostId: null,
       startedAt: null,
+      mapId: "forest",
+      difficulty: "normal",
+      disconnected: {},
       createdAt: Date.now()
     };
     rooms[id] = room;
@@ -78,9 +85,13 @@ export class GameHub extends DurableObject {
   async quickJoin() {
     const rooms = (await this.ctx.storage.get("rooms")) ?? {};
     const room = Object.values(rooms)
-      .filter((candidate) => candidate.status === "waiting" && !candidate.locked)
-      .map((candidate) => ({ candidate, count: this.ctx.getWebSockets(tagFor(candidate.id)).length }))
-      .filter(({ candidate, count }) => count < candidate.maxPlayers)
+      .filter((candidate) => this.canJoinPlaying(candidate) && !candidate.locked)
+      .map((candidate) => {
+        this.cleanDisconnected(candidate);
+        const connected = this.ctx.getWebSockets(tagFor(candidate.id)).length;
+        return { candidate, count: connected + Object.keys(candidate.disconnected ?? {}).length, connected };
+      })
+      .filter(({ candidate, count, connected }) => connected > 0 && count < candidate.maxPlayers)
       .sort((a, b) => b.count - a.count)[0]?.candidate;
     return room ?? this.createRoom();
   }
@@ -94,18 +105,24 @@ export class GameHub extends DurableObject {
     const rooms = (await this.ctx.storage.get("rooms")) ?? {};
     const room = rooms[roomId];
     if (!room) return json({ error: "Room unavailable" }, 404);
+    this.cleanDisconnected(room);
     const tag = tagFor(roomId);
     const existing = this.ctx.getWebSockets(tag);
-    if (room.locked || room.status !== "waiting") return json({ error: "Room is closed" }, 409);
-    if (existing.length >= room.maxPlayers) return json({ error: "Room is full" }, 409);
+    room.disconnected ??= {};
+    const resumeToken = url.searchParams.get("resume");
+    const resumed = resumeToken ? room.disconnected[resumeToken] : null;
+    const canResume = Boolean(resumed && Date.now() - (resumed.disconnectedAt ?? 0) <= 30000);
+    if ((room.locked && !canResume) || (!this.canJoinPlaying(room) && !canResume)) return json({ error: "Room is closed" }, 409);
+    if (!resumed && existing.length + Object.keys(room.disconnected).length >= room.maxPlayers) return json({ error: "Room is full" }, 409);
+    if (resumed) delete room.disconnected[resumeToken];
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
-    const playerId = crypto.randomUUID();
+    const playerId = resumed?.playerId ?? crypto.randomUUID();
     const hostId = room.hostId ?? playerId;
     const spawnPoints = [[0, 0], [-3, 0], [3, 0], [0, -3], [-2, 3], [2, 3]];
     const [spawnX, spawnZ] = spawnPoints[existing.length] ?? [0, 0];
-    const attachment = {
+    const attachment = resumed ? { ...resumed, roomId, host: playerId === hostId } : {
       roomId,
       playerId,
       host: playerId === hostId,
@@ -113,14 +130,16 @@ export class GameHub extends DurableObject {
       z: spawnZ,
       colorIndex: existing.length % 6,
       moveX: 0,
-      moveZ: 0
+      moveZ: 0,
+      heroId: sanitizeHeroId(url.searchParams.get("hero")),
+      resumeToken: crypto.randomUUID()
     };
     server.serializeAttachment(attachment);
     this.ctx.acceptWebSocket(server, [tag]);
     room.hostId = hostId;
     rooms[roomId] = room;
     await this.ctx.storage.put("rooms", rooms);
-    server.send(JSON.stringify({ type: "welcome", selfId: playerId, snapshot: this.snapshot(room, [...existing, server]) }));
+    server.send(JSON.stringify({ type: "welcome", selfId: playerId, resumeToken: attachment.resumeToken, snapshot: this.snapshot(room, [...existing, server]), gameState: room.gameState ?? null }));
     this.broadcast(roomId, { type: "presence", snapshot: this.snapshot(room, [...existing, server]) }, server);
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -144,12 +163,20 @@ export class GameHub extends DurableObject {
       attachment.x = clampNumber(message.px, -WORLD_LIMIT, WORLD_LIMIT);
       attachment.z = clampNumber(message.pz, -WORLD_DEPTH_LIMIT, WORLD_DEPTH_LIMIT);
       socket.serializeAttachment(attachment);
-      this.broadcast(room.id, { type: "players", players: this.playerList(room.id) });
+      this.broadcast(room.id, { type: "players", players: this.playerList(room.id, room) });
       return;
     }
     if (message.type === "game-state" && attachment.playerId === room.hostId && room.status === "playing") {
       const state = sanitizeGameState(message.state);
-      if (state) this.broadcast(room.id, { type: "game-state", state }, socket);
+      if (state) {
+        this.broadcast(room.id, { type: "game-state", state }, socket);
+        if (Date.now() - (room.gameStateSavedAt ?? 0) > 1500) {
+          room.gameState = state;
+          room.gameStateSavedAt = Date.now();
+          rooms[room.id] = room;
+          await this.ctx.storage.put("rooms", rooms);
+        }
+      }
       return;
     }
     if (message.type === "ability" && room.status === "playing") {
@@ -161,31 +188,48 @@ export class GameHub extends DurableObject {
       });
       return;
     }
-    if (message.type === "lock" && attachment.playerId === room.hostId && room.status === "waiting") {
+    if (message.type === "level-choice" && room.status === "playing") {
+      const upgradeId = ["power", "tempo", "reach", "speed"].includes(message.upgradeId) ? message.upgradeId : null;
+      if (upgradeId) this.broadcast(room.id, { type: "level-choice", playerId: attachment.playerId, upgradeId });
+      return;
+    }
+    if (message.type === "lock" && attachment.playerId === room.hostId && room.status !== "ended") {
       room.locked = !room.locked;
       rooms[room.id] = room;
       await this.ctx.storage.put("rooms", rooms);
-      this.broadcast(room.id, { type: "room", room: this.publicRoom(room), players: this.playerList(room.id) });
+      this.broadcast(room.id, { type: "room", room: this.publicRoom(room), players: this.playerList(room.id, room) });
+      return;
+    }
+    if (message.type === "configure" && attachment.playerId === room.hostId && room.status === "waiting") {
+      if (message.mapId !== undefined) room.mapId = sanitizeMapId(message.mapId);
+      if (message.difficulty !== undefined) room.difficulty = sanitizeDifficulty(message.difficulty);
+      const reservedCount = this.ctx.getWebSockets(tagFor(room.id)).length + Object.keys(room.disconnected ?? {}).length;
+      if ([2, 4, 6].includes(message.maxPlayers) && message.maxPlayers >= reservedCount) room.maxPlayers = message.maxPlayers;
+      rooms[room.id] = room;
+      await this.ctx.storage.put("rooms", rooms);
+      this.broadcast(room.id, { type: "room", room: this.publicRoom(room), players: this.playerList(room.id, room) });
       return;
     }
     if (message.type === "start" && attachment.playerId === room.hostId && room.status === "waiting") {
       room.status = "playing";
       room.startedAt = Date.now();
+      room.gameState = null;
+      room.gameStateSavedAt = 0;
       rooms[room.id] = room;
       await this.ctx.storage.put("rooms", rooms);
-      this.broadcast(room.id, { type: "start", startedAt: room.startedAt, duration: 8 * 60 });
+      this.broadcast(room.id, { type: "start", startedAt: room.startedAt, duration: ROUND_SECONDS, mapId: room.mapId, difficulty: room.difficulty });
     }
   }
 
-  async webSocketClose(socket) {
-    await this.removePlayer(socket);
+  async webSocketClose(socket, code, reason) {
+    await this.removePlayer(socket, code, reason);
   }
 
   async webSocketError(socket) {
     await this.removePlayer(socket);
   }
 
-  async removePlayer(socket) {
+  async removePlayer(socket, code = 1006, reason = "") {
     const attachment = socket.deserializeAttachment();
     const roomId = attachment?.roomId;
     if (!roomId) return;
@@ -193,10 +237,15 @@ export class GameHub extends DurableObject {
     const room = rooms[roomId];
     if (!room) return;
     const players = this.ctx.getWebSockets(tagFor(roomId)).filter((candidate) => candidate !== socket);
-    if (players.length === 0) {
+    room.disconnected ??= {};
+    const voluntary = code === 1000 && reason === "left";
+    if (!voluntary && attachment.resumeToken) room.disconnected[attachment.resumeToken] = { ...attachment, host: false, disconnectedAt: Date.now() };
+    if (voluntary && attachment.resumeToken) delete room.disconnected[attachment.resumeToken];
+    this.cleanDisconnected(room);
+    if (players.length === 0 && Object.keys(room.disconnected).length === 0) {
       delete rooms[roomId];
     } else {
-      if (room.hostId === attachment.playerId) {
+      if (players.length && room.hostId === attachment.playerId) {
         const nextHost = players[0].deserializeAttachment();
         if (nextHost) {
           nextHost.host = true;
@@ -204,27 +253,48 @@ export class GameHub extends DurableObject {
           room.hostId = nextHost.playerId;
         }
       }
+      if (players.length === 0) room.hostId = null;
       rooms[roomId] = room;
     }
     await this.ctx.storage.put("rooms", rooms);
-    if (players.length) this.broadcast(roomId, { type: "presence", snapshot: this.snapshot(room, players) });
+    if (rooms[roomId] && players.length) this.broadcast(roomId, { type: "presence", snapshot: this.snapshot(room, players) });
   }
 
-  playerList(roomId) {
-    return this.ctx.getWebSockets(tagFor(roomId)).map((socket) => socket.deserializeAttachment()).filter(Boolean)
-      .map((player) => ({ id: player.playerId, x: player.x, z: player.z, colorIndex: player.colorIndex, host: player.host }));
+  playerList(roomId, room) {
+    const connected = this.ctx.getWebSockets(tagFor(roomId)).map((socket) => socket.deserializeAttachment()).filter(Boolean)
+      .map((player) => this.publicPlayer(player));
+    const disconnected = Object.values(room?.disconnected ?? {}).map((player) => this.publicPlayer(player, true));
+    return [...connected, ...disconnected];
   }
 
   snapshot(room, sockets) {
     return {
       room: this.publicRoom(room),
-      players: sockets.map((socket) => socket.deserializeAttachment()).filter(Boolean)
-        .map((player) => ({ id: player.playerId, x: player.x, z: player.z, colorIndex: player.colorIndex, host: player.host }))
+      players: [...sockets.map((socket) => socket.deserializeAttachment()).filter(Boolean).map((player) => this.publicPlayer(player)),
+        ...Object.values(room.disconnected ?? {}).map((player) => this.publicPlayer(player, true))]
     };
   }
 
   publicRoom(room) {
-    return { id: room.id, maxPlayers: room.maxPlayers, locked: room.locked, status: room.status, startedAt: room.startedAt };
+    return { id: room.id, maxPlayers: room.maxPlayers, locked: room.locked, status: room.status, startedAt: room.startedAt, mapId: room.mapId ?? "forest", difficulty: room.difficulty ?? "normal" };
+  }
+
+  publicPlayer(player, offline = false) {
+    return { id: player.playerId, x: player.x, z: player.z, colorIndex: player.colorIndex, host: player.host, heroId: player.heroId, offline };
+  }
+
+  cleanDisconnected(room) {
+    room.disconnected ??= {};
+    for (const [token, player] of Object.entries(room.disconnected)) {
+      if (Date.now() - (player.disconnectedAt ?? 0) > 30000) delete room.disconnected[token];
+    }
+  }
+
+  canJoinPlaying(room) {
+    if (room.status === "waiting") return true;
+    if (room.status !== "playing" || !room.startedAt) return false;
+    const elapsed = Date.now() - room.startedAt;
+    return elapsed <= 6 * 60 * 1000 && !room.gameState?.boss;
   }
 
   broadcast(roomId, payload, except = null) {
@@ -237,6 +307,9 @@ export class GameHub extends DurableObject {
 }
 
 function tagFor(roomId) { return `room:${roomId}`; }
+function sanitizeHeroId(heroId) { return ["liubei", "caocao", "sunquan", "lvbu"].includes(heroId) ? heroId : "liubei"; }
+function sanitizeMapId(mapId) { return ["forest", "camp", "city"].includes(mapId) ? mapId : "forest"; }
+function sanitizeDifficulty(difficulty) { return ["easy", "normal", "hard"].includes(difficulty) ? difficulty : "normal"; }
 function clampNumber(value, min, max) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : 0;
@@ -248,7 +321,9 @@ function sanitizeGameState(state) {
     x: clampNumber(enemy?.x, -WORLD_LIMIT, WORLD_LIMIT),
     z: clampNumber(enemy?.z, -WORLD_DEPTH_LIMIT, WORLD_DEPTH_LIMIT),
     hp: Math.round(clampNumber(enemy?.hp, 0, 99)),
-    elite: Boolean(enemy?.elite)
+    elite: Boolean(enemy?.elite),
+    kind: ["grunt", "runner", "archer", "elite", "boss"].includes(enemy?.kind) ? enemy.kind : (enemy?.elite ? "elite" : "grunt"),
+    bossIndex: Math.round(clampNumber(enemy?.bossIndex ?? -1, -1, 2))
   })).filter((enemy) => enemy.hp > 0);
   const pickups = Array.isArray(state.pickups) ? state.pickups.slice(0, 20).map((pickup, index) => ({
     id: String(pickup?.id ?? index).slice(0, 32),
@@ -256,12 +331,55 @@ function sanitizeGameState(state) {
     z: clampNumber(pickup?.z, -WORLD_DEPTH_LIMIT, WORLD_DEPTH_LIMIT),
     type: pickup?.type === "heal" ? "heal" : "energy"
   })) : [];
+  const playerProgress = {};
+  if (state.playerProgress && typeof state.playerProgress === "object") {
+    for (const [playerId, progress] of Object.entries(state.playerProgress).slice(0, MAX_PLAYERS)) {
+      if (!/^[\w-]{8,64}$/.test(playerId) || !progress || typeof progress !== "object") continue;
+      const upgrades = progress.upgrades ?? {};
+      playerProgress[playerId] = {
+        xp: Math.round(clampNumber(progress.xp, 0, 999)),
+        level: Math.round(clampNumber(progress.level, 1, 99)),
+        upgrades: {
+          power: Math.round(clampNumber(upgrades.power, 0, 5)),
+          tempo: Math.round(clampNumber(upgrades.tempo, 0, 5)),
+          reach: Math.round(clampNumber(upgrades.reach, 0, 5)),
+          speed: Math.round(clampNumber(upgrades.speed, 0, 5))
+        },
+        pendingChoices: Array.isArray(progress.pendingChoices) ? progress.pendingChoices.slice(0, 8).map((offer) =>
+          Array.isArray(offer) ? offer.filter((id) => ["power", "tempo", "reach", "speed"].includes(id)).slice(0, 3) : []
+        ) : []
+      };
+    }
+  }
+  const boss = state.boss && typeof state.boss === "object" ? {
+    hp: Math.round(clampNumber(state.boss.hp, 0, 9999)),
+    maxHp: Math.round(clampNumber(state.boss.maxHp, 0, 9999)),
+    bossIndex: Math.round(clampNumber(state.boss.bossIndex, 0, 2))
+  } : null;
+  const playerVitals = {};
+  if (state.playerVitals && typeof state.playerVitals === "object") {
+    for (const [playerId, vital] of Object.entries(state.playerVitals).slice(0, MAX_PLAYERS)) {
+      if (!/^[\w-]{8,64}$/.test(playerId) || !vital || typeof vital !== "object") continue;
+      playerVitals[playerId] = {
+        hp: Math.round(clampNumber(vital.hp, 0, 100)),
+        maxHp: Math.round(clampNumber(vital.maxHp, 1, 100)),
+        downed: Boolean(vital.downed),
+        eliminated: Boolean(vital.eliminated),
+        reviveProgress: clampNumber(vital.reviveProgress, 0, 3),
+        downedAt: Math.round(clampNumber(vital.downedAt, 0, Date.now()))
+      };
+    }
+  }
   return {
     enemies,
     pickups,
+    playerProgress,
+    boss,
+    finalBossDefeated: Boolean(state.finalBossDefeated),
+    bossesSpawned: Array.isArray(state.bossesSpawned) ? state.bossesSpawned.map((value) => Math.round(clampNumber(value, 0, 2))).slice(0, 3) : [],
+    playerVitals,
     xp: Math.round(clampNumber(state.xp, 0, 9999)),
     level: Math.round(clampNumber(state.level, 1, 99)),
-    teamHealth: Math.round(clampNumber(state.teamHealth, 0, 100)),
     energy: Math.round(clampNumber(state.energy, 0, 100))
   };
 }
