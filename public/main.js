@@ -105,6 +105,19 @@ const liuBeiLegendTextures = Object.fromEntries(liuBeiViews.map((view) => {
   texture.magFilter = THREE.LinearFilter;
   return [view, texture];
 }));
+// Authored key poses drive a deterministic 6-frame run cycle and 7-frame attack.
+// The 32 facing bins blend neighboring painted views while keeping these clips in sync.
+const liuBeiRunFrames = [
+  { y: 0, x: 0, w: 0, h: 0 }, { y: .045, x: -.025, w: -.025, h: -.015 },
+  { y: .11, x: -.045, w: -.04, h: -.035 }, { y: .065, x: .02, w: -.02, h: -.02 },
+  { y: 0, x: .045, w: 0, h: 0 }, { y: .065, x: .025, w: -.02, h: -.02 }
+];
+const liuBeiAttackFrames = [
+  { x: 0, y: 0, w: 0, h: 0 }, { x: -.08, y: -.02, w: -.06, h: .025 },
+  { x: -.04, y: .015, w: .02, h: -.025 }, { x: .13, y: .055, w: .12, h: -.09 },
+  { x: .17, y: .045, w: .1, h: -.06 }, { x: .08, y: .015, w: .04, h: -.025 },
+  { x: 0, y: 0, w: 0, h: 0 }
+];
 
 let localPlayer = makeWarrior(HEROES[appState.heroId]?.color ?? COLORS[0], true, appState.heroId);
 localPlayer.group.position.set(0, 0, 0);
@@ -336,11 +349,28 @@ function makeLiuBeiSprite(color) {
   sprite.scale.set(2.85, 3.42, 1);
   sprite.renderOrder = 2;
   group.add(sprite);
+  const blendMaterial = material.clone();
+  blendMaterial.opacity = 0;
+  const blendSprite = new THREE.Sprite(blendMaterial);
+  blendSprite.position.copy(sprite.position);
+  blendSprite.scale.copy(sprite.scale);
+  blendSprite.renderOrder = 3;
+  group.add(blendSprite);
+  const swingGroup = new THREE.Group();
+  const swingMaterial = new THREE.MeshBasicMaterial({ color: 0xd7c69b, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
+  for (let i = 0; i < 3; i++) {
+    const arc = new THREE.Mesh(new THREE.TorusGeometry(.8 + i * .18, .035, 5, 28, Math.PI * .82), swingMaterial.clone());
+    arc.rotation.set(Math.PI / 2, 0, -.42 + i * .12);
+    arc.position.y = 1.45 + i * .06;
+    swingGroup.add(arc);
+  }
+  swingGroup.visible = false;
+  group.add(swingGroup);
   const shadow = new THREE.Mesh(new THREE.CircleGeometry(.78, 28), new THREE.MeshBasicMaterial({ color: 0x455047, transparent: true, opacity: .2, depthWrite: false }));
   shadow.rotation.x = -Math.PI / 2;
   shadow.position.y = .035;
   group.add(shadow);
-  const visual = { group, body: sprite, sprite, spriteView: "front", weapon: new THREE.Group(), color, heroId: "liubei", moving: false, attackAt: -Infinity, baseScale: 1 };
+  const visual = { group, body: sprite, sprite, blendSprite, swingGroup, spriteView: "front", weapon: new THREE.Group(), color, heroId: "liubei", moving: false, attackAt: -Infinity, runFrame: 0, facing32: 0, baseScale: 1 };
   visual.progression = addProgressionEquipment(group, "liubei");
   return visual;
 }
@@ -351,31 +381,76 @@ function updateLiuBeiFacing(visual) {
   let relative = visual.group.rotation.y - toCamera;
   while (relative > Math.PI) relative -= Math.PI * 2;
   while (relative < -Math.PI) relative += Math.PI * 2;
-  const step = Math.PI / 4;
-  const nextOctant = Math.round(relative / step);
-  if (visual.spriteOctant === undefined) visual.spriteOctant = ((nextOctant % 8) + 8) % 8;
-  const currentCenter = visual.spriteOctant * step;
-  const angleFromCurrent = Math.atan2(Math.sin(relative - currentCenter), Math.cos(relative - currentCenter));
-  if (Math.abs(angleFromCurrent) > step / 2 + .07) visual.spriteOctant = ((nextOctant % 8) + 8) % 8;
-  const viewsByOctant = ["front", "frontRight", "right", "backRight", "back", "backLeft", "left", "frontLeft"];
-  const view = viewsByOctant[visual.spriteOctant];
+  const angleStep = Math.PI * 2 / 32;
+  const facing32 = ((Math.round(relative / angleStep) % 32) + 32) % 32;
+  visual.facing32 = facing32;
+  const viewsByOctant = liuBeiViews;
+  const viewPosition = ((facing32 / 4) % 8 + 8) % 8;
+  const lower = Math.floor(viewPosition);
+  const upper = (lower + 1) % 8;
+  const mix = viewPosition - lower;
+  const fromView = viewsByOctant[lower];
+  const toView = viewsByOctant[upper];
   const playerId = visual.playerId ?? appState.selfId;
   const tier = (appState.playerProgress[playerId]?.level ?? 1) >= 10 ? "legend" : "base";
-  if (visual.spriteView !== view || visual.spriteTier !== tier) {
-    visual.spriteView = view;
+  const textureSet = tier === "legend" ? liuBeiLegendTextures : liuBeiTextures;
+  if (visual.spriteView !== fromView || visual.spriteTier !== tier) {
+    visual.spriteView = fromView;
     visual.spriteTier = tier;
-    visual.sprite.material.map = (tier === "legend" ? liuBeiLegendTextures : liuBeiTextures)[view];
+    visual.sprite.material.map = textureSet[fromView];
     visual.sprite.material.needsUpdate = true;
   }
+  if (visual.blendView !== toView || visual.blendTier !== tier) {
+    visual.blendView = toView;
+    visual.blendTier = tier;
+    visual.blendSprite.material.map = textureSet[toView];
+    visual.blendSprite.material.needsUpdate = true;
+  }
+  visual.sprite.material.opacity = 1 - mix;
+  visual.blendSprite.material.opacity = mix;
 }
 
 function updateLiuBeiMotion(visual, now) {
   if (!visual?.sprite) return;
-  const runBob = visual.moving ? Math.abs(Math.sin(now * .018)) * .075 : Math.sin(now * .002) * .018;
   const attackAge = (now - visual.attackAt) / 1000;
-  const attacking = attackAge >= 0 && attackAge < .16;
-  visual.sprite.position.y = 1.72 + runBob;
-  visual.sprite.scale.set(attacking ? 3.05 : 2.85, attacking ? 3.27 : 3.42, 1);
+  const attackActive = attackAge >= 0 && attackAge < .42;
+  const runPosition = (now % 600) / 100;
+  const runIndex = Math.floor(runPosition) % liuBeiRunFrames.length;
+  const sample = (frames, position) => {
+    const index = Math.min(frames.length - 1, Math.floor(position));
+    const next = Math.min(frames.length - 1, index + 1);
+    const t = THREE.MathUtils.smoothstep(position - index, 0, 1);
+    return Object.fromEntries(Object.keys(frames[index]).map((key) => [key, THREE.MathUtils.lerp(frames[index][key], frames[next][key], t)]));
+  };
+  const runPose = visual.moving ? sample(liuBeiRunFrames, runPosition) : { y: Math.sin(now * .003) * .012, x: 0, w: 0, h: 0 };
+  visual.runFrame = visual.moving ? runIndex : 0;
+  const attackPosition = attackAge / .42 * (liuBeiAttackFrames.length - 1);
+  const attackPose = attackActive ? sample(liuBeiAttackFrames, attackPosition) : { x: 0, y: 0, w: 0, h: 0 };
+  visual.attackFrame = attackActive ? Math.min(liuBeiAttackFrames.length - 1, Math.floor(attackPosition)) : -1;
+  const strike = attackActive ? Math.sin(Math.min(1, Math.max(0, (attackAge - .09) / .16)) * Math.PI) : 0;
+  visual.sprite.position.y = 1.72 + runPose.y + attackPose.y;
+  visual.blendSprite.position.y = visual.sprite.position.y;
+  visual.sprite.position.x = runPose.x + attackPose.x;
+  visual.blendSprite.position.x = visual.sprite.position.x;
+  const width = 2.85 + runPose.w + attackPose.w;
+  const height = 3.42 + runPose.h + attackPose.h;
+  visual.sprite.scale.set(width, height, 1);
+  visual.blendSprite.scale.copy(visual.sprite.scale);
+  visual.sprite.material.rotation = visual.moving ? Math.sin(runPosition * Math.PI / 3) * .012 : 0;
+  visual.blendSprite.material.rotation = visual.sprite.material.rotation;
+  const swing = visual.swingGroup;
+  if (swing) {
+    swing.visible = attackActive && attackAge > .085 && attackAge < .31;
+    if (swing.visible) {
+      const t = Math.min(1, (attackAge - .085) / .22);
+      swing.rotation.y = -(visual.facing32 ?? 0) * Math.PI / 16 + t * 1.35 - .7;
+      swing.scale.setScalar(.62 + t * .85);
+      swing.children.forEach((arc, i) => {
+        arc.material.opacity = Math.max(0, Math.sin(t * Math.PI)) * (.7 - i * .13);
+        arc.rotation.z = -.5 + t * 1.05 + i * .1;
+      });
+    }
+  }
 }
 
 function setHero(heroId) {
