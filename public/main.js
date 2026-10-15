@@ -191,6 +191,57 @@ function makeTree(leafColor, trunkColor) {
   return group;
 }
 
+function addProgressionEquipment(group, heroId) {
+  const color = ({ liubei: 0xb9aa78, caocao: 0xa69b7d, sunquan: 0x91a9a8, lvbu: 0xb77b6d }[heroId] ?? 0xb9aa78);
+  const ringMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: .65, side: THREE.DoubleSide, depthWrite: false });
+  const floorRing = new THREE.Mesh(new THREE.RingGeometry(.78, .88, 36), ringMaterial.clone());
+  floorRing.rotation.x = -Math.PI / 2;
+  floorRing.position.y = .07;
+  floorRing.visible = false;
+  group.add(floorRing);
+  const waistRing = new THREE.Mesh(new THREE.TorusGeometry(.72, .035, 7, 32), ringMaterial.clone());
+  waistRing.rotation.x = Math.PI / 2;
+  waistRing.position.y = 1.55;
+  waistRing.visible = false;
+  group.add(waistRing);
+  const crownRing = new THREE.Mesh(new THREE.TorusGeometry(.54, .028, 6, 28), ringMaterial.clone());
+  crownRing.rotation.x = Math.PI / 2;
+  crownRing.position.y = 3.05;
+  crownRing.visible = false;
+  group.add(crownRing);
+  const jewels = new THREE.Group();
+  for (let i = 0; i < 3; i++) {
+    const jewel = new THREE.Mesh(new THREE.OctahedronGeometry(.105, 0), new THREE.MeshBasicMaterial({ color: i === 1 ? 0x9cae8d : color, transparent: true, opacity: .9 }));
+    jewels.add(jewel);
+  }
+  jewels.visible = false;
+  group.add(jewels);
+  return { floorRing, waistRing, crownRing, jewels };
+}
+
+function updateProgressionEquipment(visual, progress, now, delta) {
+  if (!visual?.progression) return;
+  const level = Math.max(1, progress?.level ?? 1);
+  const tier = level >= 10 ? 3 : level >= 6 ? 2 : level >= 3 ? 1 : 0;
+  const targetGrowth = 1 + Math.min(.24, (level - 1) * .018);
+  visual.currentGrowth ??= 1;
+  visual.currentGrowth += (targetGrowth - visual.currentGrowth) * (1 - Math.exp(-Math.min(delta, .05) * 4.5));
+  visual.group.scale.setScalar((visual.baseScale ?? 1) * visual.currentGrowth);
+  const gear = visual.progression;
+  gear.floorRing.visible = tier >= 1;
+  gear.waistRing.visible = tier >= 2;
+  gear.crownRing.visible = tier >= 3;
+  gear.jewels.visible = tier >= 2;
+  gear.floorRing.scale.setScalar(1 + tier * .1);
+  gear.waistRing.rotation.y = now * .00055;
+  gear.crownRing.rotation.y = -now * .00072;
+  gear.jewels.rotation.y = now * .001;
+  gear.jewels.children.forEach((jewel, index) => {
+    const angle = now * .0012 + index * Math.PI * 2 / 3;
+    jewel.position.set(Math.cos(angle) * .88, 1.75 + Math.sin(angle * 1.4) * .12, Math.sin(angle) * .4);
+  });
+}
+
 function makeWarrior(color, hero = false, heroId = "liubei") {
   if (hero && heroId === "liubei") return makeLiuBeiSprite(color);
   const group = new THREE.Group();
@@ -256,8 +307,11 @@ function makeWarrior(color, hero = false, heroId = "liubei") {
   shadow.rotation.x = -Math.PI / 2;
   shadow.position.y = .035;
   group.add(shadow);
-  if (hero && heroId === "lvbu") group.scale.setScalar(1.12);
-  return { group, body, weapon, color, heroId };
+  const baseScale = hero && heroId === "lvbu" ? 1.12 : 1;
+  group.scale.setScalar(baseScale);
+  const visual = { group, body, weapon, color, heroId, baseScale };
+  if (hero) visual.progression = addProgressionEquipment(group, heroId);
+  return visual;
 }
 
 function makeLiuBeiSprite(color) {
@@ -279,7 +333,9 @@ function makeLiuBeiSprite(color) {
   shadow.rotation.x = -Math.PI / 2;
   shadow.position.y = .035;
   group.add(shadow);
-  return { group, body: sprite, sprite, spriteView: "front", weapon: new THREE.Group(), color, heroId: "liubei", moving: false, attackAt: -Infinity };
+  const visual = { group, body: sprite, sprite, spriteView: "front", weapon: new THREE.Group(), color, heroId: "liubei", moving: false, attackAt: -Infinity, baseScale: 1 };
+  visual.progression = addProgressionEquipment(group, "liubei");
+  return visual;
 }
 
 function updateLiuBeiFacing(visual) {
@@ -406,36 +462,59 @@ function createEnemy(position = null, id = null, hp = 2, elite = false, kind = e
   return enemy;
 }
 
-function makeProjectile(from, to, heroId = "liubei") {
+function makeProjectile(from, to, heroId = "liubei", upgrades = {}) {
   const colors = { liubei: 0x9caa83, caocao: 0xb49b6e, sunquan: 0x8097a0, lvbu: 0xb67b6d };
-  const material = new THREE.MeshBasicMaterial({ color: colors[heroId] ?? 0xc8a96f, transparent: true, opacity: .94, depthWrite: false });
-  let mesh;
-  if (heroId === "liubei") {
-    mesh = new THREE.Mesh(new THREE.TorusGeometry(.22, .055, 5, 14, Math.PI * 1.45), material);
-    mesh.scale.set(.9, 1.2, 1);
-  } else if (heroId === "caocao") {
-    mesh = new THREE.Mesh(new THREE.BoxGeometry(.1, .66, .08), material);
-  } else if (heroId === "sunquan") {
-    mesh = new THREE.Mesh(new THREE.ConeGeometry(.11, .54, 5), material);
-    mesh.rotation.x = Math.PI / 2;
-  } else {
-    mesh = new THREE.Mesh(new THREE.OctahedronGeometry(.2, 0), material);
-    mesh.scale.set(.8, 1.6, .8);
+  const shotCount = upgrades.tempo >= 5 ? 2 : 1;
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const distance = Math.max(.01, Math.hypot(dx, dz));
+  const sideX = dz / distance;
+  const sideZ = -dx / distance;
+  for (let shot = 0; shot < shotCount; shot++) {
+    const material = new THREE.MeshBasicMaterial({ color: colors[heroId] ?? 0xc8a96f, transparent: true, opacity: .94, depthWrite: false });
+    let mesh;
+    if (heroId === "liubei") {
+      mesh = new THREE.Mesh(new THREE.TorusGeometry(.22, .055, 5, 14, Math.PI * 1.45), material);
+      mesh.scale.set(.9, 1.2, 1);
+    } else if (heroId === "caocao") {
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(.1, .66, .08), material);
+    } else if (heroId === "sunquan") {
+      mesh = new THREE.Mesh(new THREE.ConeGeometry(.11, .54, 5), material);
+      mesh.rotation.x = Math.PI / 2;
+    } else {
+      mesh = new THREE.Mesh(new THREE.OctahedronGeometry(.2, 0), material);
+      mesh.scale.set(.8, 1.6, .8);
+    }
+    const powerScale = upgrades.power >= 5 ? 1.45 : 1;
+    const lane = shotCount === 2 ? (shot === 0 ? -.22 : .22) : 0;
+    mesh.scale.multiplyScalar(powerScale);
+    mesh.position.set(from.x + sideX * lane, 1.45, from.z + sideZ * lane);
+    mesh.rotation.y = Math.atan2(dx, dz);
+    projectileGroup.add(mesh);
+    const start = new THREE.Vector3(mesh.position.x, 1.45, mesh.position.z);
+    const target = new THREE.Vector3(to.x + sideX * lane * .45, 1.25, to.z + sideZ * lane * .45);
+    appState.projectiles.push({ mesh, from: start, to: target, progress: 0, elapsed: 0, delay: shot * .07, heroId, upgrades: { ...upgrades } });
   }
-  mesh.position.set(from.x, 1.45, from.z);
-  mesh.rotation.y = Math.atan2(to.x - from.x, to.z - from.z);
-  projectileGroup.add(mesh);
-  appState.projectiles.push({ mesh, from: mesh.position.clone(), to: new THREE.Vector3(to.x, 1.25, to.z), progress: 0, heroId });
 }
 
-function showHitBurst(x, z, heroId = "liubei") {
+function showHitBurst(x, z, heroId = "liubei", upgrades = {}) {
   const colors = { liubei: 0x9caa83, caocao: 0xb49b6e, sunquan: 0x8097a0, lvbu: 0xb67b6d };
-  const ring = new THREE.Mesh(new THREE.RingGeometry(.18, .48, 22), new THREE.MeshBasicMaterial({ color: colors[heroId] ?? 0xc8a96f, transparent: true, opacity: .88, side: THREE.DoubleSide, depthWrite: false }));
+  const scaleTo = upgrades.power >= 5 ? 3.4 : 2.4;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(.18, upgrades.power >= 5 ? .6 : .48, 22), new THREE.MeshBasicMaterial({ color: colors[heroId] ?? 0xc8a96f, transparent: true, opacity: .88, side: THREE.DoubleSide, depthWrite: false }));
   ring.rotation.x = -Math.PI / 2;
   ring.position.set(x, .18, z);
   ring.scale.setScalar(.2);
   world.add(ring);
-  appState.bursts.push({ mesh: ring, age: 0, duration: .24, scaleTo: 2.4 });
+  appState.bursts.push({ mesh: ring, age: 0, duration: upgrades.tempo >= 5 ? .34 : .24, scaleTo });
+}
+
+function showRunTrail(x, z, heroId) {
+  const colors = { liubei: 0x9caa83, caocao: 0xb49b6e, sunquan: 0x8097a0, lvbu: 0xb67b6d };
+  const ring = new THREE.Mesh(new THREE.RingGeometry(.12, .2, 14), new THREE.MeshBasicMaterial({ color: colors[heroId] ?? 0xb9aa78, transparent: true, opacity: .35, side: THREE.DoubleSide, depthWrite: false }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(x, .08, z);
+  world.add(ring);
+  appState.bursts.push({ mesh: ring, age: 0, duration: .28, scaleTo: 3.2 });
 }
 
 function createPickup(position, id = null, type = "energy") {
@@ -465,7 +544,7 @@ function removePickup(pickup) {
   pickup.ring.material.dispose();
 }
 
-function showAbilityBurst(x, z, heroId = "liubei") {
+function showAbilityBurst(x, z, heroId = "liubei", upgrades = {}) {
   const colors = { liubei: 0x9caa83, caocao: 0xb49b6e, sunquan: 0x8097a0, lvbu: 0xb67b6d };
   const segments = { liubei: 36, caocao: 4, sunquan: 7, lvbu: 12 }[heroId] ?? 36;
   const inner = heroId === "lvbu" ? .52 : .82;
@@ -474,7 +553,7 @@ function showAbilityBurst(x, z, heroId = "liubei") {
   ring.position.set(x, .12, z);
   ring.scale.setScalar(.1);
   world.add(ring);
-  appState.bursts.push({ mesh: ring, age: 0, duration: .62, scaleTo: heroId === "lvbu" ? 9 : heroId === "liubei" ? 13 : 11 });
+  appState.bursts.push({ mesh: ring, age: 0, duration: upgrades.tempo >= 5 ? .82 : .62, scaleTo: upgrades.power >= 5 ? 16 : heroId === "lvbu" ? 9 : heroId === "liubei" ? 13 : 11 });
 }
 
 function awardKill(enemy, killerId = appState.selfId) {
@@ -499,8 +578,8 @@ function activateAbility(playerId, x, z) {
   const heroId = appState.players.get(playerId)?.heroId ?? (playerId === appState.selfId ? appState.heroId : "liubei");
   const hero = HEROES[heroId] ?? HEROES.liubei;
   const progress = ensureProgress(playerId);
-  const radius = hero.role === "ranged" ? 15 : hero.role === "vanguard" ? 10 : 12;
-  const damage = (hero.role === "vanguard" ? 4 : hero.role === "support" ? 1 : 3) + progress.upgrades.power;
+  const radius = (hero.role === "ranged" ? 15 : hero.role === "vanguard" ? 10 : 12) + (progress.upgrades.reach >= 5 ? 3 : 0);
+  const damage = (hero.role === "vanguard" ? 4 : hero.role === "support" ? 1 : 3) + progress.upgrades.power + (progress.upgrades.power >= 5 ? 2 : 0);
   const attackerVisual = playerId === appState.selfId ? localPlayer : playerVisuals.get(playerId);
   const facing = attackerVisual?.group.rotation.y ?? 0;
   if (hero.role === "support") {
@@ -700,13 +779,15 @@ function handleSocketMessage(event) {
   if (message.type === "players") setPlayers(message.players);
   if (message.type === "game-state") applyGameState(message.state);
   if (message.type === "attack-fx" && message.from && message.to) {
-    makeProjectile(message.from, message.to, message.heroId);
+    const upgrades = appState.playerProgress[message.playerId]?.upgrades ?? {};
+    makeProjectile(message.from, message.to, message.heroId, upgrades);
     const attacker = message.playerId === appState.selfId ? localPlayer : playerVisuals.get(message.playerId);
     if (attacker) attacker.attackAt = performance.now();
   }
   if (message.type === "ability") {
     const heroId = appState.players.get(message.playerId)?.heroId ?? "liubei";
-    showAbilityBurst(message.x, message.z, heroId);
+    const upgrades = appState.playerProgress[message.playerId]?.upgrades ?? {};
+    showAbilityBurst(message.x, message.z, heroId, upgrades);
     if (appState.host) activateAbility(message.playerId, message.x, message.z);
   }
   if (message.type === "level-choice" && appState.host) applyLevelChoice(message.playerId, message.upgradeId);
@@ -750,6 +831,7 @@ function setPlayers(players) {
     let visual = playerVisuals.get(player.id);
     if (!visual) {
       visual = makeWarrior(HEROES[player.heroId]?.color ?? COLORS[player.colorIndex % COLORS.length], true, player.heroId ?? "liubei");
+      visual.playerId = player.id;
       world.add(visual.group);
       playerVisuals.set(player.id, visual);
     }
@@ -1025,10 +1107,15 @@ function updateMovement(delta) {
   const length = Math.hypot(x, z);
   localPlayer.moving = length > .08;
   if (length > 1) { x /= length; z /= length; }
-  const speed = (HEROES[appState.heroId]?.speed ?? 11) + (appState.playerProgress[appState.selfId]?.upgrades?.speed ?? 0);
+  const speedRank = appState.playerProgress[appState.selfId]?.upgrades?.speed ?? 0;
+  const speed = (HEROES[appState.heroId]?.speed ?? 11) + speedRank + (speedRank >= 5 ? 2 : 0);
   localPlayer.group.position.x = clamp(localPlayer.group.position.x + x * speed * delta, -WORLD.x + 2, WORLD.x - 2);
   localPlayer.group.position.z = clamp(localPlayer.group.position.z + z * speed * delta, -WORLD.z + 2, WORLD.z - 2);
   if (length > .08) localPlayer.group.rotation.y = Math.atan2(x, z);
+  if (speedRank >= 5 && length > .4 && performance.now() - (localPlayer.lastRunTrail ?? 0) > 135) {
+    localPlayer.lastRunTrail = performance.now();
+    showRunTrail(localPlayer.group.position.x, localPlayer.group.position.z, appState.heroId);
+  }
   if (appState.socket?.readyState === WebSocket.OPEN && performance.now() - appState.lastInput > 250) {
     appState.lastInput = performance.now();
     appState.socket.send(JSON.stringify({ type: "input", x, z, px: localPlayer.group.position.x, pz: localPlayer.group.position.z }));
@@ -1169,7 +1256,7 @@ function updateCombat(now, delta) {
       const target = nearestEnemy(player.position);
       if (target && target.group.position.distanceTo(player.position) < hero.range + progress.upgrades.reach * 2) {
         if (player.id === appState.selfId) playSound("attack");
-        makeProjectile(player.position, target.group.position, heroId);
+        makeProjectile(player.position, target.group.position, heroId, progress.upgrades);
         const attackerVisual = player.id === appState.selfId ? localPlayer : playerVisuals.get(player.id);
         if (attackerVisual) attackerVisual.attackAt = now;
         if (appState.socket?.readyState === WebSocket.OPEN) {
@@ -1181,7 +1268,10 @@ function updateCombat(now, delta) {
             playerId: player.id
           }));
         }
-        target.group.userData.hp -= hero.damage + progress.upgrades.power;
+        const powerRank = progress.upgrades.power;
+        const reachRank = progress.upgrades.reach;
+        const baseDamage = hero.damage + powerRank + (powerRank >= 5 ? 1 : 0);
+        target.group.userData.hp -= baseDamage;
         target.group.userData.hitUntil = now + 85;
         const hitX = target.group.position.x - player.position.x;
         const hitZ = target.group.position.z - player.position.z;
@@ -1189,8 +1279,33 @@ function updateCombat(now, delta) {
         const knockback = heroId === "lvbu" ? .7 : .28;
         target.group.position.x = clamp(target.group.position.x + hitX / hitDistance * knockback, -WORLD.x + 2, WORLD.x - 2);
         target.group.position.z = clamp(target.group.position.z + hitZ / hitDistance * knockback, -WORLD.z + 2, WORLD.z - 2);
+        if (powerRank >= 5) {
+          for (const nearby of appState.enemies) {
+            if (nearby === target || !nearby.group.userData.alive || nearby.group.position.distanceTo(target.group.position) > 1.7) continue;
+            nearby.group.userData.hp -= Math.max(1, Math.ceil(baseDamage * .45));
+            nearby.group.userData.hitUntil = now + 85;
+            if (nearby.group.userData.hp <= 0) awardKill(nearby, player.id);
+          }
+        }
+        if (reachRank >= 5) {
+          const lineX = target.group.position.x - player.position.x;
+          const lineZ = target.group.position.z - player.position.z;
+          const lineLengthSq = Math.max(.01, lineX * lineX + lineZ * lineZ);
+          for (const pierced of appState.enemies) {
+            if (pierced === target || !pierced.group.userData.alive) continue;
+            const px = pierced.group.position.x - player.position.x;
+            const pz = pierced.group.position.z - player.position.z;
+            const along = (px * lineX + pz * lineZ) / lineLengthSq;
+            const across = Math.abs(px * lineZ - pz * lineX) / Math.sqrt(lineLengthSq);
+            if (along <= 0 || along >= 1 || across > .72) continue;
+            pierced.group.userData.hp -= Math.max(1, Math.ceil(baseDamage * .55));
+            pierced.group.userData.hitUntil = now + 85;
+            if (pierced.group.userData.hp <= 0) awardKill(pierced, player.id);
+          }
+        }
         if (target.group.userData.hp <= 0) awardKill(target, player.id);
-        appState.nextPlayerAttacks.set(player.id, now + hero.cadence * Math.pow(.9, progress.upgrades.tempo));
+        const tempoScale = Math.pow(.9, progress.upgrades.tempo) * (progress.upgrades.tempo >= 5 ? .82 : 1);
+        appState.nextPlayerAttacks.set(player.id, now + hero.cadence * tempoScale);
       } else appState.nextPlayerAttacks.set(player.id, now + 160);
     }
     appState.pickups = appState.pickups.filter((pickup) => {
@@ -1253,13 +1368,15 @@ function updateCombat(now, delta) {
     if (vitals.length && vitals.every((vital) => vital.downed || vital.eliminated)) finishRun(false);
   }
   for (const projectile of appState.projectiles) {
+    projectile.elapsed += delta;
+    if (projectile.elapsed < (projectile.delay ?? 0)) continue;
     projectile.progress += delta * 4.2;
     projectile.mesh.position.lerpVectors(projectile.from, projectile.to, Math.min(projectile.progress, 1));
     projectile.mesh.rotation.z += delta * 3.4;
   }
   appState.projectiles = appState.projectiles.filter((projectile) => {
     if (projectile.progress < 1) return true;
-    showHitBurst(projectile.to.x, projectile.to.z, projectile.heroId);
+    showHitBurst(projectile.to.x, projectile.to.z, projectile.heroId, projectile.upgrades);
     projectileGroup.remove(projectile.mesh);
     projectile.mesh.geometry.dispose();
     projectile.mesh.material.dispose();
@@ -1304,9 +1421,11 @@ function animate() {
   updateCamera();
   updateLiuBeiFacing(localPlayer);
   updateLiuBeiMotion(localPlayer, now);
+  updateProgressionEquipment(localPlayer, appState.playerProgress[appState.selfId], now, delta);
   for (const visual of playerVisuals.values()) {
     updateLiuBeiFacing(visual);
     updateLiuBeiMotion(visual, now);
+    updateProgressionEquipment(visual, appState.playerProgress[visual.playerId], now, delta);
   }
   renderer.render(scene, camera);
 }
