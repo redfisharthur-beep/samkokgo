@@ -16,7 +16,8 @@ const appState = {
   players: new Map(), socket: null, cameraMode: 0, startedAt: null,
   secondsLeft: ROUND_SECONDS, xp: 0, level: 1, muted: false, lastInput: 0,
   pointer: null, move: { x: 0, z: 0 }, enemies: [], projectiles: [],
-  nextSpawn: 0, nextAttack: 0, toastTimer: 0
+  nextSpawn: 0, nextAttack: 0, lastGameSync: 0, enemySequence: 0,
+  nextPlayerAttacks: new Map(), toastTimer: 0
 };
 
 const renderer = new THREE.WebGLRenderer({ canvas: $("world"), antialias: true, alpha: false, powerPreference: "low-power" });
@@ -164,19 +165,26 @@ function makeWarrior(color, hero = false) {
   return { group, body, weapon, color };
 }
 
-function createEnemy() {
+function createEnemy(position = null, id = null, hp = 2) {
   const enemy = makeWarrior(0x9c6b65, false);
   enemy.group.scale.setScalar(.78);
-  enemy.group.userData = { hp: 2, speed: 2.3 + Math.random() * .9, alive: true, hitAt: 0 };
+  enemy.group.userData = { id: id ?? `enemy-${++appState.enemySequence}`, hp, speed: 2.3 + Math.random() * .9, alive: true, hitAt: 0 };
   enemyGroup.add(enemy.group);
-  const angle = Math.random() * Math.PI * 2;
-  const radius = 22 + Math.random() * 13;
-  enemy.group.position.set(
-    clamp(localPlayer.group.position.x + Math.cos(angle) * radius, -WORLD.x + 2, WORLD.x - 2),
-    0,
-    clamp(localPlayer.group.position.z + Math.sin(angle) * radius * .57, -WORLD.z + 2, WORLD.z - 2)
-  );
+  if (position) enemy.group.position.set(position.x, 0, position.z);
+  else {
+    const party = [...appState.players.values()];
+    const centerX = party.length ? party.reduce((sum, player) => sum + player.x, 0) / party.length : localPlayer.group.position.x;
+    const centerZ = party.length ? party.reduce((sum, player) => sum + player.z, 0) / party.length : localPlayer.group.position.z;
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 22 + Math.random() * 13;
+    enemy.group.position.set(
+      clamp(centerX + Math.cos(angle) * radius, -WORLD.x + 2, WORLD.x - 2),
+      0,
+      clamp(centerZ + Math.sin(angle) * radius * .57, -WORLD.z + 2, WORLD.z - 2)
+    );
+  }
   appState.enemies.push(enemy);
+  return enemy;
 }
 
 function makeProjectile(from, to) {
@@ -187,12 +195,12 @@ function makeProjectile(from, to) {
   appState.projectiles.push({ mesh, from: mesh.position.clone(), to: new THREE.Vector3(to.x, 1.25, to.z), progress: 0, target: to });
 }
 
-function nearestEnemy() {
+function nearestEnemy(position = localPlayer.group.position) {
   let best = null;
   let bestDistance = Infinity;
   for (const enemy of appState.enemies) {
     if (!enemy.group.userData.alive) continue;
-    const d = enemy.group.position.distanceTo(localPlayer.group.position);
+    const d = enemy.group.position.distanceTo(position);
     if (d < bestDistance) { best = enemy; bestDistance = d; }
   }
   return best;
@@ -245,7 +253,8 @@ async function joinRoom(roomId) {
 }
 
 function handleSocketMessage(event) {
-  const message = JSON.parse(event.data);
+  let message;
+  try { message = JSON.parse(event.data); } catch { return; }
   if (message.type === "welcome") {
     appState.selfId = message.selfId;
     applySnapshot(message.snapshot);
@@ -253,20 +262,18 @@ function handleSocketMessage(event) {
   }
   if (message.type === "presence") applySnapshot(message.snapshot);
   if (message.type === "players") setPlayers(message.players);
+  if (message.type === "game-state") applyGameState(message.state);
   if (message.type === "room") {
     appState.room = message.room;
     appState.host = appState.room?.hostId === appState.selfId || appState.players.get(appState.selfId)?.host;
     renderRoom();
   }
   if (message.type === "start") {
+    clearRun();
     appState.startedAt = message.startedAt;
     appState.secondsLeft = message.duration ?? ROUND_SECONDS;
-    appState.enemies = [];
-    appState.projectiles = [];
-    enemyGroup.clear();
-    projectileGroup.clear();
     appState.nextSpawn = performance.now() + 1800;
-    appState.nextAttack = performance.now() + 700;
+    appState.lastGameSync = 0;
     setScreen("game");
     showToast("");
   }
@@ -307,6 +314,32 @@ function setPlayers(players) {
   appState.players = next;
   renderRoom();
   renderPartyStrip();
+}
+
+function applyGameState(state) {
+  if (!state || !Array.isArray(state.enemies)) return;
+  appState.xp = Number(state.xp) || 0;
+  appState.level = Math.max(1, Number(state.level) || 1);
+  ui.xpFill.style.width = `${Math.min(100, 12 + appState.level * 5)}%`;
+  const skillCount = Math.min(6, 2 + appState.level);
+  if (ui.skillRow.children.length !== skillCount) {
+    ui.skillRow.replaceChildren(...Array.from({ length: skillCount }, () => {
+      const token = document.createElement("span"); token.className = "skill-token"; return token;
+    }));
+  }
+  const seen = new Set();
+  for (const snapshot of state.enemies) {
+    seen.add(snapshot.id);
+    let enemy = appState.enemies.find((item) => item.group.userData.id === snapshot.id);
+    if (!enemy) enemy = createEnemy({ x: snapshot.x, z: snapshot.z }, snapshot.id, snapshot.hp);
+    enemy.group.position.set(snapshot.x, 0, snapshot.z);
+    enemy.group.userData.hp = snapshot.hp;
+  }
+  appState.enemies = appState.enemies.filter((enemy) => {
+    if (seen.has(enemy.group.userData.id)) return true;
+    enemyGroup.remove(enemy.group);
+    return false;
+  });
 }
 
 function renderRoom() {
@@ -389,6 +422,9 @@ function clearRun() {
   appState.startedAt = null;
   appState.enemies.length = 0;
   appState.projectiles.length = 0;
+  appState.nextPlayerAttacks.clear();
+  appState.enemySequence = 0;
+  appState.lastGameSync = 0;
   enemyGroup.clear();
   projectileGroup.clear();
   appState.xp = 0;
@@ -460,47 +496,76 @@ function updateRemotePlayers(delta) {
 
 function updateCombat(now, delta) {
   if (appState.screen !== "game") return;
-  if (now > appState.nextSpawn && appState.enemies.length < 36) {
-    createEnemy();
-    appState.nextSpawn = now + Math.max(750, 1700 - appState.level * 60) + Math.random() * 500;
-  }
-  for (const enemy of appState.enemies) {
-    const data = enemy.group.userData;
-    if (!data.alive) continue;
-    const dx = localPlayer.group.position.x - enemy.group.position.x;
-    const dz = localPlayer.group.position.z - enemy.group.position.z;
-    const distance = Math.hypot(dx, dz);
-    if (distance > 1.65) {
-      enemy.group.position.x += dx / Math.max(distance, .001) * data.speed * delta;
-      enemy.group.position.z += dz / Math.max(distance, .001) * data.speed * delta;
-      enemy.group.rotation.y = Math.atan2(dx, dz);
-    } else if (now - data.hitAt > 1100) {
-      data.hitAt = now;
-      localPlayer.body.material.color.setHex(0xc08c7d);
-      setTimeout(() => localPlayer.body.material.color.setHex(COLORS[0]), 140);
-      $("combatFlash").classList.add("hit");
-      setTimeout(() => $("combatFlash").classList.remove("hit"), 130);
+  if (appState.host) {
+    if (now > appState.nextSpawn && appState.enemies.length < 36) {
+      createEnemy();
+      appState.nextSpawn = now + Math.max(750, 1700 - appState.level * 60) + Math.random() * 500;
     }
-  }
-  appState.enemies = appState.enemies.filter((enemy) => enemy.group.userData.alive);
-  if (now > appState.nextAttack) {
-    const target = nearestEnemy();
-    if (target && target.group.position.distanceTo(localPlayer.group.position) < 17) {
-      makeProjectile(localPlayer.group.position, target.group.position);
-      target.group.userData.hp -= 1;
-      if (target.group.userData.hp <= 0) {
-        target.group.userData.alive = false;
-        enemyGroup.remove(target.group);
-        appState.xp += 1;
-        if (appState.xp >= 7 + appState.level * 2) {
-          appState.xp = 0;
-          appState.level += 1;
-          ui.xpFill.style.width = `${Math.min(100, 12 + appState.level * 5)}%`;
-          showToast("");
-          addSkillToken();
-        }
+    const party = [...appState.players.values()].map((player) => ({
+      id: player.id,
+      position: new THREE.Vector3(player.x, 0, player.z)
+    }));
+    if (!party.length) party.push({ id: appState.selfId, position: localPlayer.group.position });
+    for (const enemy of appState.enemies) {
+      const data = enemy.group.userData;
+      if (!data.alive) continue;
+      let target = party[0];
+      let distance = Infinity;
+      for (const player of party) {
+        const d = enemy.group.position.distanceTo(player.position);
+        if (d < distance) { target = player; distance = d; }
       }
-      appState.nextAttack = now + Math.max(300, 780 - appState.level * 15);
+      const dx = target.position.x - enemy.group.position.x;
+      const dz = target.position.z - enemy.group.position.z;
+      if (distance > 1.65) {
+        enemy.group.position.x += dx / Math.max(distance, .001) * data.speed * delta;
+        enemy.group.position.z += dz / Math.max(distance, .001) * data.speed * delta;
+        enemy.group.rotation.y = Math.atan2(dx, dz);
+      } else if (target.id === appState.selfId && now - data.hitAt > 1100) {
+        data.hitAt = now;
+        localPlayer.body.material.color.setHex(0xc08c7d);
+        setTimeout(() => localPlayer.body.material.color.setHex(COLORS[0]), 140);
+        $("combatFlash").classList.add("hit");
+        setTimeout(() => $("combatFlash").classList.remove("hit"), 130);
+      }
+    }
+    for (const player of party) {
+      const nextAttack = appState.nextPlayerAttacks.get(player.id) ?? now + 450;
+      if (now < nextAttack) continue;
+      const target = nearestEnemy(player.position);
+      if (target && target.group.position.distanceTo(player.position) < 17) {
+        makeProjectile(player.position, target.group.position);
+        target.group.userData.hp -= 1;
+        if (target.group.userData.hp <= 0) {
+          target.group.userData.alive = false;
+          enemyGroup.remove(target.group);
+          appState.xp += 1;
+          if (appState.xp >= 7 + appState.level * 2) {
+            appState.xp = 0;
+            appState.level += 1;
+            ui.xpFill.style.width = `${Math.min(100, 12 + appState.level * 5)}%`;
+            addSkillToken();
+          }
+        }
+        appState.nextPlayerAttacks.set(player.id, now + Math.max(300, 780 - appState.level * 15));
+      }
+    }
+    appState.enemies = appState.enemies.filter((enemy) => enemy.group.userData.alive);
+    if (appState.socket?.readyState === WebSocket.OPEN && now - appState.lastGameSync > 150) {
+      appState.lastGameSync = now;
+      appState.socket.send(JSON.stringify({
+        type: "game-state",
+        state: {
+          xp: appState.xp,
+          level: appState.level,
+          enemies: appState.enemies.map((enemy) => ({
+            id: enemy.group.userData.id,
+            x: enemy.group.position.x,
+            z: enemy.group.position.z,
+            hp: enemy.group.userData.hp
+          }))
+        }
+      }));
     }
   }
   for (const projectile of appState.projectiles) {
