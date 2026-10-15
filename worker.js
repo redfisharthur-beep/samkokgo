@@ -250,8 +250,15 @@ function sanitizeGameState(state) {
     hp: Math.round(clampNumber(enemy?.hp, 0, 99)),
     elite: Boolean(enemy?.elite)
   })).filter((enemy) => enemy.hp > 0);
+  const pickups = Array.isArray(state.pickups) ? state.pickups.slice(0, 20).map((pickup, index) => ({
+    id: String(pickup?.id ?? index).slice(0, 32),
+    x: clampNumber(pickup?.x, -WORLD_LIMIT, WORLD_LIMIT),
+    z: clampNumber(pickup?.z, -WORLD_DEPTH_LIMIT, WORLD_DEPTH_LIMIT),
+    type: pickup?.type === "heal" ? "heal" : "energy"
+  })) : [];
   return {
     enemies,
+    pickups,
     xp: Math.round(clampNumber(state.xp, 0, 9999)),
     level: Math.round(clampNumber(state.level, 1, 99)),
     teamHealth: Math.round(clampNumber(state.teamHealth, 0, 100)),
