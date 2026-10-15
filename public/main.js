@@ -87,67 +87,26 @@ const floor = new THREE.Mesh(
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 world.add(floor);
-buildMapDecor();
-
-const liuBeiTextureLoader = new THREE.TextureLoader();
-const liuBeiViews = ["front", "frontRight", "right", "backRight", "back", "backLeft", "left", "frontLeft"];
-const liuBeiTextures = Object.fromEntries(liuBeiViews.map((view) => {
-  const texture = liuBeiTextureLoader.load(`/assets/characters/liubei/${view}.svg`);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  return [view, texture];
-}));
-const liuBeiLegendTextures = Object.fromEntries(liuBeiViews.map((view) => {
-  const texture = liuBeiTextureLoader.load(`/assets/characters/liubei/legend-${view}.svg`);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  return [view, texture];
-}));
-function sliceLiuBeiAtlas(texture) {
-  const image = texture.image;
-  const sourceWidth = image.naturalWidth / 8;
-  const sourceHeight = image.naturalHeight / 4;
-  const cellWidth = Math.round(sourceWidth);
-  const cellHeight = Math.round(sourceHeight);
-  return Array.from({ length: 32 }, (_, index) => {
-    const canvas = document.createElement("canvas");
-    canvas.width = cellWidth;
-    canvas.height = cellHeight;
-    const context = canvas.getContext("2d");
-    const column = index % 8;
-    const row = Math.floor(index / 8);
-    context.drawImage(image, column * sourceWidth, row * sourceHeight, sourceWidth, sourceHeight, 0, 0, cellWidth, cellHeight);
-    const frame = new THREE.CanvasTexture(canvas);
-    frame.colorSpace = THREE.SRGBColorSpace;
-    frame.minFilter = THREE.LinearMipmapLinearFilter;
-    frame.magFilter = THREE.LinearFilter;
-    frame.generateMipmaps = true;
-    return frame;
-  });
+const blockGeometryCache = new Map();
+const blockMaterialCache = new Map();
+function blockGeometry(width, height, depth) {
+  const key = `${width}|${height}|${depth}`;
+  if (!blockGeometryCache.has(key)) blockGeometryCache.set(key, new THREE.BoxGeometry(width, height, depth));
+  return blockGeometryCache.get(key);
 }
-let liuBeiRunArtFrames = [];
-let liuBeiAttackArtFrames = [];
-liuBeiTextureLoader.load("/assets/characters/liubei/run-32.svg", (texture) => {
-  liuBeiRunArtFrames = sliceLiuBeiAtlas(texture);
-});
-liuBeiTextureLoader.load("/assets/characters/liubei/attack-32.svg", (texture) => {
-  liuBeiAttackArtFrames = sliceLiuBeiAtlas(texture);
-});
-// Authored key poses drive a deterministic 6-frame run cycle and 7-frame attack.
-// These motion key poses animate the authored 32-angle run and attack art.
-const liuBeiRunPoseFrames = [
-  { y: 0, x: 0, w: 0, h: 0 }, { y: .045, x: -.025, w: -.025, h: -.015 },
-  { y: .11, x: -.045, w: -.04, h: -.035 }, { y: .065, x: .02, w: -.02, h: -.02 },
-  { y: 0, x: .045, w: 0, h: 0 }, { y: .065, x: .025, w: -.02, h: -.02 }
-];
-const liuBeiAttackPoseFrames = [
-  { x: 0, y: 0, w: 0, h: 0 }, { x: -.08, y: -.02, w: -.06, h: .025 },
-  { x: -.04, y: .015, w: .02, h: -.025 }, { x: .13, y: .055, w: .12, h: -.09 },
-  { x: .17, y: .045, w: .1, h: -.06 }, { x: .08, y: .015, w: .04, h: -.025 },
-  { x: 0, y: 0, w: 0, h: 0 }
-];
+function addBlock(parent, size, color, position, materialOptions = {}) {
+  const options = { color, roughness: .82, metalness: .02, ...materialOptions };
+  const key = Object.entries(options).sort(([a], [b]) => a.localeCompare(b)).map(([name, value]) => `${name}:${value}`).join("|");
+  if (!blockMaterialCache.has(key)) blockMaterialCache.set(key, new THREE.MeshStandardMaterial(options));
+  const material = blockMaterialCache.get(key);
+  const mesh = new THREE.Mesh(blockGeometry(...size), material);
+  mesh.position.set(...position);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+buildMapDecor();
 
 let localPlayer = makeWarrior(HEROES[appState.heroId]?.color ?? COLORS[0], true, appState.heroId);
 localPlayer.group.position.set(0, 0, 0);
@@ -163,8 +122,10 @@ world.add(projectileGroup);
 function buildMapDecor() {
   if (mapDecor.parent) mapDecor.parent.remove(mapDecor);
   mapDecor.traverse((object) => {
-    if (object.geometry) object.geometry.dispose();
-    if (object.material) for (const material of Array.isArray(object.material) ? object.material : [object.material]) material.dispose();
+    if (object.geometry && ![...blockGeometryCache.values()].includes(object.geometry)) object.geometry.dispose();
+    if (object.material) for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+      if (![...blockMaterialCache.values()].includes(material)) material.dispose();
+    }
   });
   mapDecor = new THREE.Group();
   const palette = MAPS[appState.mapId] ?? MAPS.forest;
@@ -196,22 +157,33 @@ function buildMapDecor() {
     mapDecor.add(tree);
   }
   for (const [x, z] of [[-17, -10], [17, -10], [-17, 10], [17, 10]]) {
-    const marker = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2.1, .45, 7), new THREE.MeshStandardMaterial({ color: 0xb8a782, roughness: 1 }));
-    marker.position.set(x, .22, z);
-    marker.castShadow = true;
-    marker.receiveShadow = true;
-    mapDecor.add(marker);
+    addBlock(mapDecor, [3.4, .32, 3.4], 0xa9a28b, [x, .16, z]);
+    addBlock(mapDecor, [2.75, .25, 2.75], 0xc4b995, [x, .42, z]);
+    addBlock(mapDecor, [.48, .6, .48], 0x8f8a76, [x - .85, .78, z - .85]);
+    addBlock(mapDecor, [.48, .6, .48], 0x8f8a76, [x + .85, .78, z + .85]);
   }
   if (appState.mapId === "camp") {
     for (const [x, z] of [[-12,-8],[12,-8],[-12,8],[12,8]]) {
-      const tent = new THREE.Mesh(new THREE.ConeGeometry(2.8, 3.8, 4), new THREE.MeshStandardMaterial({ color: 0x9f8064, roughness: 1 }));
-      tent.position.set(x, 1.9, z); tent.rotation.y = Math.PI / 4; tent.castShadow = true; mapDecor.add(tent);
+      addBlock(mapDecor, [4.2, 1.55, 3.2], 0x9f8064, [x, .82, z]);
+      const roof = addBlock(mapDecor, [4.7, .34, 3.7], 0xb49b7b, [x, 1.76, z]);
+      roof.rotation.z = -.28;
+      addBlock(mapDecor, [.18, 2.4, .18], 0x796d58, [x - 1.8, 1.15, z - 1.25]);
+      addBlock(mapDecor, [.18, 2.4, .18], 0x796d58, [x + 1.8, 1.15, z - 1.25]);
+      addBlock(mapDecor, [.75, 1.45, .12], 0x6f6657, [x, .74, z + 1.63]);
     }
   }
   if (appState.mapId === "city") {
     for (const [x,z,rotation] of [[-33,-15,0],[-33,15,0],[33,-15,0],[33,15,0],[-15,-20,Math.PI/2],[15,20,Math.PI/2]]) {
-      const wall = new THREE.Mesh(new THREE.BoxGeometry(rotation ? 25 : 2.2, 4.5, rotation ? 2.2 : 17), new THREE.MeshStandardMaterial({ color: 0x9b9a89, roughness: 1 }));
-      wall.position.set(x, 2.2, z); wall.castShadow = true; wall.receiveShadow = true; mapDecor.add(wall);
+      const length = rotation ? 25 : 17;
+      const wall = addBlock(mapDecor, [rotation ? length : 2.2, 3.6, rotation ? 2.2 : length], 0x9b9a89, [x, 1.8, z]);
+      wall.rotation.y = rotation;
+      const cap = addBlock(mapDecor, [rotation ? length : 2.7, .3, rotation ? 2.7 : length], 0xb9b49f, [x, 3.75, z]);
+      cap.rotation.y = rotation;
+      for (let i = 0; i < 5; i++) {
+        const offset = -length / 2 + 1.5 + i * (length - 3) / 4;
+        const merlon = addBlock(mapDecor, [.85, .75, .85], 0x898b80, [x + (rotation ? offset : 0), 4.1, z + (rotation ? 0 : offset)]);
+        merlon.rotation.y = rotation;
+      }
     }
   }
   world.add(mapDecor);
@@ -225,19 +197,18 @@ function updateMapVisual(mapId) {
 
 function makeTree(leafColor, trunkColor) {
   const group = new THREE.Group();
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.23, .35, 1.8, 7), new THREE.MeshStandardMaterial({ color: trunkColor, roughness: 1 }));
-  trunk.position.y = .8;
-  trunk.castShadow = true;
-  group.add(trunk);
-  const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(1.15, 1), new THREE.MeshStandardMaterial({ color: leafColor, roughness: 1, flatShading: true }));
-  leaves.position.y = 2.2;
-  leaves.scale.set(1.15, 1.25, 1.05);
-  leaves.castShadow = true;
-  group.add(leaves);
-  const hill = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2.1, .35, 8), new THREE.MeshStandardMaterial({ color: 0xaeb49e, roughness: 1 }));
-  hill.position.y = .16;
-  hill.receiveShadow = true;
-  group.add(hill);
+  addBlock(group, [.5, 1.55, .5], trunkColor, [0, .78, 0]);
+  addBlock(group, [.22, .85, .22], 0x9b8063, [-.25, 1.16, 0]);
+  const layers = [
+    { w: 2.25, h: .92, d: 1.9, y: 2.05, color: leafColor },
+    { w: 1.8, h: .88, d: 1.55, y: 2.78, color: leafColor },
+    { w: 1.2, h: .82, d: 1.08, y: 3.45, color: 0x9ba58f }
+  ];
+  for (const layer of layers) {
+    addBlock(group, [layer.w, layer.h, layer.d], layer.color, [0, layer.y, 0]);
+    addBlock(group, [layer.w * .28, .16, layer.d * .25], 0xb2b29a, [-layer.w * .25, layer.y + .08, layer.d * .18]);
+  }
+  addBlock(group, [2.5, .22, 2.2], 0xaeb49e, [0, .11, 0]);
   return group;
 }
 
@@ -292,223 +263,148 @@ function updateProgressionEquipment(visual, progress, now, delta) {
   });
 }
 
-function makeWarrior(color, hero = false, heroId = "liubei") {
-  if (hero && heroId === "liubei") return makeLiuBeiSprite(color);
+function makeWarrior(color, hero = false, heroId = "liubei", enemyKind = "grunt") {
   const group = new THREE.Group();
-  const armor = new THREE.MeshStandardMaterial({ color, roughness: .83, metalness: .04 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x555c54, roughness: .95 });
-  const skin = new THREE.MeshStandardMaterial({ color: 0xd8bda3, roughness: .9 });
-  const gold = new THREE.MeshStandardMaterial({ color: 0xc3a66f, roughness: .68, metalness: .1 });
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(hero ? (heroId === "lvbu" ? .66 : .58) : .48, hero ? .86 : .7, 4, 8), armor);
-  body.position.y = 1.15;
-  body.castShadow = true;
-  group.add(body);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(hero ? .52 : .43, 14, 12), skin);
-  head.position.y = 2.08;
-  head.castShadow = true;
-  group.add(head);
-  const helmet = new THREE.Mesh(new THREE.SphereGeometry(.53, 12, 8, 0, Math.PI * 2, 0, Math.PI * .58), gold);
-  helmet.position.y = 2.25;
-  helmet.castShadow = true;
-  group.add(helmet);
-  const plumeColor = hero ? ({ liubei: 0xb77b6d, caocao: 0x555c54, sunquan: 0x8097a0, lvbu: 0xc2a56f }[heroId] ?? 0xb77b6d) : 0x7d7668;
-  const plume = new THREE.Mesh(new THREE.ConeGeometry(hero && heroId === "lvbu" ? .22 : .17, hero && heroId === "lvbu" ? .95 : .68, 7), new THREE.MeshStandardMaterial({ color: plumeColor, roughness: .8 }));
-  plume.position.set(0, 2.8, -.02);
-  plume.rotation.z = -.1;
-  group.add(plume);
+  enemyKind = hero ? null : enemyKind;
+  const schemes = {
+    liubei: { cloth: 0x718779, armor: 0x685f4e, trim: 0xc0a66e, dark: 0x3d4943, skin: 0xd6b99d, accent: 0x9dac8d },
+    caocao: { cloth: 0x4d5554, armor: 0x7b7161, trim: 0xc0a66e, dark: 0x343b3a, skin: 0xcdb59e, accent: 0x876f68 },
+    sunquan: { cloth: 0x708b8d, armor: 0x6c7060, trim: 0xc5aa72, dark: 0x3f5558, skin: 0xd7bda3, accent: 0x9ba887 },
+    lvbu: { cloth: 0x8a5f59, armor: 0x484a49, trim: 0xc3a56e, dark: 0x343637, skin: 0xd2b196, accent: 0x69514d },
+    grunt: { cloth: 0x86635e, armor: 0x5d5550, trim: 0xa68b66, dark: 0x403f3d, skin: 0xc5a58d, accent: 0xa5786d },
+    runner: { cloth: 0x9a8464, armor: 0x626158, trim: 0xbba16f, dark: 0x45443d, skin: 0xc9aa91, accent: 0xb08e68 },
+    archer: { cloth: 0x657b80, armor: 0x545e5c, trim: 0xb09a6d, dark: 0x394447, skin: 0xcdb39a, accent: 0x87989a },
+    elite: { cloth: 0x77756a, armor: 0x464a47, trim: 0xc1a56f, dark: 0x343a37, skin: 0xc8aa91, accent: 0x9a746a },
+    boss: { cloth: 0x66585d, armor: 0x383e3e, trim: 0xc1a56f, dark: 0x292f30, skin: 0xb8957f, accent: 0xb47e72 }
+  };
+  const palette = schemes[hero ? heroId : enemyKind] ?? schemes.grunt;
+  const rig = new THREE.Group();
+  group.add(rig);
+  const bodyPivot = new THREE.Group();
+  bodyPivot.position.y = 1.38;
+  rig.add(bodyPivot);
+  const body = addBlock(bodyPivot, [1.02, .9, .62], palette.cloth, [0, 0, 0]);
+  addBlock(bodyPivot, [.9, .12, .66], palette.trim, [0, -.36, .015]);
+  addBlock(bodyPivot, [.36, .2, .69], palette.accent, [0, -.36, .02]);
+  addBlock(bodyPivot, [.82, .46, .16], palette.armor, [0, .12, .39], { metalness: .12, roughness: .58 });
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 3; col++) {
+      addBlock(bodyPivot, [.23, .105, .045], row === 1 && col === 1 ? palette.accent : palette.trim,
+        [-.25 + col * .25, .28 - row * .135, .49], { metalness: .18, roughness: .5 });
+    }
+  }
   for (const side of [-1, 1]) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(.17, .2, .72, 8), dark);
-    leg.position.set(side * .24, .42, 0);
-    leg.castShadow = true;
-    group.add(leg);
-    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(.14, .38, 3, 6), armor);
-    arm.position.set(side * .65, 1.27, 0);
-    arm.rotation.z = side * -.28;
-    arm.castShadow = true;
-    group.add(arm);
+    const skirt = addBlock(bodyPivot, [.44, .66, .14], palette.cloth, [side * .31, -.64, .25]);
+    skirt.rotation.x = -.08;
+    addBlock(bodyPivot, [.46, .13, .17], palette.accent, [side * .31, -.43, .31]);
+    const shoulder = addBlock(bodyPivot, [.42, .28, .48], palette.armor, [side * .63, .36, .015], { metalness: .1 });
+    shoulder.rotation.z = side * -.08;
+  }
+  const headGroup = new THREE.Group();
+  headGroup.position.set(0, .78, .015);
+  bodyPivot.add(headGroup);
+  addBlock(headGroup, [.62, .62, .54], palette.skin, [0, 0, .035]);
+  addBlock(headGroup, [.7, .16, .6], palette.dark, [0, .28, -.015]);
+  addBlock(headGroup, [.7, .1, .55], palette.trim, [0, .22, .03]);
+  addBlock(headGroup, [.16, .11, .025], 0xf0e6d6, [-.15, -.015, .314]);
+  addBlock(headGroup, [.16, .11, .025], 0xf0e6d6, [.15, -.015, .314]);
+  addBlock(headGroup, [.055, .09, .035], palette.dark, [-.15, -.015, .335]);
+  addBlock(headGroup, [.055, .09, .035], palette.dark, [.15, -.015, .335]);
+  addBlock(headGroup, [.08, .04, .04], palette.dark, [0, -.12, .33]);
+  if (heroId === "liubei" && hero) {
+    addBlock(headGroup, [.12, .2, .1], palette.dark, [0, -.3, .2]);
+    addBlock(headGroup, [.42, .1, .16], palette.dark, [0, -.26, .3]);
+    addBlock(headGroup, [.28, .1, .08], palette.accent, [0, .4, -.02]);
+    addBlock(headGroup, [.17, .17, .12], 0x96a978, [0, .38, .04], { metalness: .16, roughness: .35 });
+    addBlock(headGroup, [.08, .23, .08], palette.trim, [0, .42, -.02]);
+  } else if (heroId === "lvbu" && hero) {
+    addBlock(headGroup, [.14, .55, .16], palette.trim, [-.27, .46, -.02]);
+    addBlock(headGroup, [.14, .55, .16], palette.trim, [.27, .46, -.02]);
+    addBlock(headGroup, [.78, .12, .65], palette.armor, [0, .29, 0]);
+  } else if (heroId === "caocao" && hero) {
+    addBlock(headGroup, [.78, .2, .68], palette.dark, [0, .34, -.01]);
+    addBlock(headGroup, [.5, .27, .18], palette.trim, [0, .48, -.12]);
+  } else if (heroId === "sunquan" && hero) {
+    addBlock(headGroup, [.8, .14, .66], palette.trim, [0, .3, -.01]);
+    addBlock(headGroup, [.16, .28, .16], palette.accent, [0, .45, -.14]);
+  } else {
+    addBlock(headGroup, [.78, .17, .68], palette.armor, [0, .3, -.01]);
+    if (enemyKind === "boss" || enemyKind === "elite") {
+      addBlock(headGroup, [.12, .42, .14], palette.trim, [-.3, .48, -.05]);
+      addBlock(headGroup, [.12, .42, .14], palette.trim, [.3, .48, -.05]);
+    }
+  }
+  const leftLeg = new THREE.Group();
+  const rightLeg = new THREE.Group();
+  leftLeg.position.set(-.27, .62, 0);
+  rightLeg.position.set(.27, .62, 0);
+  rig.add(leftLeg, rightLeg);
+  for (const [leg, side] of [[leftLeg, -1], [rightLeg, 1]]) {
+    addBlock(leg, [.34, .66, .4], palette.dark, [0, -.28, 0]);
+    addBlock(leg, [.4, .21, .55], palette.armor, [0, -.57, .09]);
+    addBlock(leg, [.42, .09, .57], palette.trim, [0, -.63, .09]);
+  }
+  const leftArm = new THREE.Group();
+  const rightArm = new THREE.Group();
+  leftArm.position.set(-.62, 1.7, .01);
+  rightArm.position.set(.62, 1.7, .01);
+  rig.add(leftArm, rightArm);
+  for (const [arm, side] of [[leftArm, -1], [rightArm, 1]]) {
+    addBlock(arm, [.34, .38, .42], palette.armor, [0, -.13, 0]);
+    addBlock(arm, [.3, .47, .36], palette.cloth, [0, -.53, .06]);
+    addBlock(arm, [.27, .23, .29], palette.skin, [0, -.83, .1]);
+    addBlock(arm, [.36, .12, .43], palette.trim, [0, -.75, .11]);
   }
   const weapon = new THREE.Group();
-  if (hero && heroId === "sunquan") {
-    const bow = new THREE.Mesh(new THREE.TorusGeometry(.67, .07, 7, 20, Math.PI * 1.3), gold);
-    bow.scale.set(.62, 1, .5);
-    bow.rotation.z = -.55;
-    weapon.add(bow);
-    const string = new THREE.Mesh(new THREE.CylinderGeometry(.018, .018, 1.1, 5), skin);
-    string.position.set(.36, .08, 0); string.rotation.z = -.28; weapon.add(string);
-  } else if (hero && heroId === "caocao") {
-    const hilt = new THREE.Mesh(new THREE.CylinderGeometry(.07, .07, .72, 7), dark);
-    hilt.position.y = .45;
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(.17, 1.75, .09), new THREE.MeshStandardMaterial({ color: 0xc6c6b7, metalness: .42, roughness: .35 }));
-    blade.position.y = 1.63;
-    const guard = new THREE.Mesh(new THREE.BoxGeometry(.72, .12, .14), gold); guard.position.y = .9;
-    weapon.add(hilt, blade, guard);
+  rightArm.add(weapon);
+  weapon.position.set(0, -.8, .12);
+  if (!hero && enemyKind === "archer" || heroId === "sunquan" && hero) {
+    addBlock(weapon, [.1, .22, .12], palette.dark, [0, -.05, 0]);
+    addBlock(weapon, [.12, .56, .12], palette.trim, [0, .34, 0]);
+    const bowTop = addBlock(weapon, [.12, .38, .12], palette.trim, [.02, .76, 0]);
+    const bowBottom = addBlock(weapon, [.12, .38, .12], palette.trim, [.02, -.08, 0]);
+    bowTop.rotation.z = -.28;
+    bowBottom.rotation.z = .28;
+    addBlock(weapon, [.035, .95, .035], 0xd8c9aa, [.1, .33, .04]);
+    if (!hero) {
+      for (let i = 0; i < 3; i++) addBlock(bodyPivot, [.055, .64, .055], palette.trim, [-.38 + i * .1, .02, -.42]);
+    }
+  } else if (heroId === "caocao" && hero || !hero && enemyKind !== "runner") {
+    addBlock(weapon, [.12, 1.0, .12], palette.dark, [0, .34, 0]);
+    addBlock(weapon, [.22, .62, .08], palette.trim, [0, .85, .025], { metalness: .2, roughness: .42 });
+    addBlock(weapon, [.45, .11, .16], palette.trim, [0, .52, 0]);
   } else {
-    const length = hero && heroId === "lvbu" ? 3.25 : 2.15;
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.045, .05, length, 7), dark);
-    shaft.position.y = length / 2;
-    const tip = new THREE.Mesh(new THREE.ConeGeometry(hero && heroId === "lvbu" ? .28 : .16, hero && heroId === "lvbu" ? .78 : .5, 6), gold);
-    tip.position.y = length + .1;
-    weapon.add(shaft, tip);
+    addBlock(weapon, [.09, 1.55, .09], palette.dark, [0, .48, 0]);
+    addBlock(weapon, [.26, .28, .16], palette.trim, [0, 1.25, 0], { metalness: .16 });
+    addBlock(weapon, [.1, .34, .1], palette.trim, [0, 1.48, 0]);
   }
-  weapon.position.set(.7, .4, .12);
-  weapon.rotation.z = -.22;
-  group.add(weapon);
   const shadow = new THREE.Mesh(new THREE.CircleGeometry(hero ? .8 : .68, 20), new THREE.MeshBasicMaterial({ color: 0x455047, transparent: true, opacity: .22, depthWrite: false }));
   shadow.rotation.x = -Math.PI / 2;
   shadow.position.y = .035;
   group.add(shadow);
   const baseScale = hero && heroId === "lvbu" ? 1.12 : 1;
   group.scale.setScalar(baseScale);
-  const visual = { group, body, weapon, color, heroId, baseScale };
+  const visual = { group, rig, bodyPivot, headGroup, leftArm, rightArm, leftLeg, rightLeg, weapon, body, color, heroId, enemyKind, hero, moving: false, attackAt: -Infinity, animationOffset: Math.random() * Math.PI * 2, baseScale };
   if (hero) visual.progression = addProgressionEquipment(group, heroId);
   return visual;
 }
 
-function makeLiuBeiSprite(color) {
-  const group = new THREE.Group();
-  const material = new THREE.SpriteMaterial({
-    map: liuBeiTextures.front,
-    color: 0xffffff,
-    transparent: true,
-    alphaTest: .08,
-    depthWrite: false,
-    toneMapped: false
-  });
-  const sprite = new THREE.Sprite(material);
-  sprite.position.y = 1.72;
-  sprite.scale.set(2.85, 3.42, 1);
-  sprite.renderOrder = 2;
-  group.add(sprite);
-  const blendMaterial = material.clone();
-  blendMaterial.opacity = 0;
-  const blendSprite = new THREE.Sprite(blendMaterial);
-  blendSprite.position.copy(sprite.position);
-  blendSprite.scale.copy(sprite.scale);
-  blendSprite.renderOrder = 3;
-  group.add(blendSprite);
-  const swingGroup = new THREE.Group();
-  const swingMaterial = new THREE.MeshBasicMaterial({ color: 0xd7c69b, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
-  for (let i = 0; i < 3; i++) {
-    const arc = new THREE.Mesh(new THREE.TorusGeometry(.8 + i * .18, .035, 5, 28, Math.PI * .82), swingMaterial.clone());
-    arc.rotation.set(Math.PI / 2, 0, -.42 + i * .12);
-    arc.position.y = 1.45 + i * .06;
-    swingGroup.add(arc);
-  }
-  swingGroup.visible = false;
-  group.add(swingGroup);
-  const shadow = new THREE.Mesh(new THREE.CircleGeometry(.78, 28), new THREE.MeshBasicMaterial({ color: 0x455047, transparent: true, opacity: .2, depthWrite: false }));
-  shadow.rotation.x = -Math.PI / 2;
-  shadow.position.y = .035;
-  group.add(shadow);
-  const visual = { group, body: sprite, sprite, blendSprite, swingGroup, spriteView: "front", weapon: new THREE.Group(), color, heroId: "liubei", moving: false, attackAt: -Infinity, runFrame: 0, facing32: 0, baseScale: 1 };
-  visual.progression = addProgressionEquipment(group, "liubei");
-  return visual;
-}
-
-function updateLiuBeiFacing(visual) {
-  if (!visual?.sprite || !camera) return;
-  const toCamera = Math.atan2(camera.position.x - visual.group.position.x, camera.position.z - visual.group.position.z);
-  let relative = visual.group.rotation.y - toCamera;
-  while (relative > Math.PI) relative -= Math.PI * 2;
-  while (relative < -Math.PI) relative += Math.PI * 2;
-  const fullTurn = Math.PI * 2;
-  const turn = ((relative % fullTurn) + fullTurn) % fullTurn;
-  const anglePosition = turn / fullTurn * 32;
-  const facing32 = Math.floor(anglePosition) % 32;
-  visual.facing32 = facing32;
-  visual.facingMix = anglePosition - Math.floor(anglePosition);
-  visual.facingFrameA = facing32;
-  visual.facingFrameB = (facing32 + 1) % 32;
-  const viewsByOctant = liuBeiViews;
-  const viewPosition = turn / (Math.PI / 4);
-  const lower = Math.floor(viewPosition);
-  const upper = (lower + 1) % 8;
-  const mix = viewPosition - lower;
-  const fromView = viewsByOctant[lower];
-  const toView = viewsByOctant[upper];
-  const playerId = visual.playerId ?? appState.selfId;
-  const tier = (appState.playerProgress[playerId]?.level ?? 1) >= 10 ? "legend" : "base";
-  const textureSet = tier === "legend" ? liuBeiLegendTextures : liuBeiTextures;
-  if (visual.spriteView !== fromView || visual.spriteTier !== tier) {
-    visual.spriteView = fromView;
-    visual.spriteTier = tier;
-    visual.sprite.material.map = textureSet[fromView];
-    visual.sprite.material.needsUpdate = true;
-  }
-  if (visual.blendView !== toView || visual.blendTier !== tier) {
-    visual.blendView = toView;
-    visual.blendTier = tier;
-    visual.blendSprite.material.map = textureSet[toView];
-    visual.blendSprite.material.needsUpdate = true;
-  }
-  visual.sprite.material.opacity = 1 - mix;
-  visual.blendSprite.material.opacity = mix;
-}
-
-function updateLiuBeiMotion(visual, now) {
-  if (!visual?.sprite) return;
+function updateWarriorMotion(visual, now) {
+  if (!visual?.rig) return;
+  const phase = now * (visual.moving ? .014 : .0022) + (visual.animationOffset ?? 0);
+  const stride = visual.moving ? Math.sin(phase) : 0;
   const attackAge = (now - visual.attackAt) / 1000;
-  const attackActive = attackAge >= 0 && attackAge < .42;
-  const runPosition = (now % 600) / 100;
-  const runIndex = Math.floor(runPosition) % liuBeiRunPoseFrames.length;
-  const sample = (frames, position) => {
-    const index = Math.min(frames.length - 1, Math.floor(position));
-    const next = Math.min(frames.length - 1, index + 1);
-    const t = THREE.MathUtils.smoothstep(position - index, 0, 1);
-    return Object.fromEntries(Object.keys(frames[index]).map((key) => [key, THREE.MathUtils.lerp(frames[index][key], frames[next][key], t)]));
-  };
-  const runPose = visual.moving ? sample(liuBeiRunPoseFrames, runPosition) : { y: Math.sin(now * .003) * .012, x: 0, w: 0, h: 0 };
-  visual.runFrame = visual.moving ? runIndex : 0;
-  const attackPosition = attackAge / .42 * (liuBeiAttackPoseFrames.length - 1);
-  const attackPose = attackActive ? sample(liuBeiAttackPoseFrames, attackPosition) : { x: 0, y: 0, w: 0, h: 0 };
-  visual.attackFrame = attackActive ? Math.min(liuBeiAttackPoseFrames.length - 1, Math.floor(attackPosition)) : -1;
-  const strike = attackActive ? Math.sin(Math.min(1, Math.max(0, (attackAge - .09) / .16)) * Math.PI) : 0;
-  visual.sprite.position.y = 1.72 + runPose.y + attackPose.y;
-  visual.blendSprite.position.y = visual.sprite.position.y;
-  visual.sprite.position.x = runPose.x + attackPose.x;
-  visual.blendSprite.position.x = visual.sprite.position.x;
-  const width = 2.85 + runPose.w + attackPose.w;
-  const height = 3.42 + runPose.h + attackPose.h;
-  visual.sprite.scale.set(width, height, 1);
-  visual.blendSprite.scale.copy(visual.sprite.scale);
-  visual.sprite.material.rotation = visual.moving ? Math.sin(runPosition * Math.PI / 3) * .012 : 0;
-  visual.blendSprite.material.rotation = visual.sprite.material.rotation;
-  const isLegend = (appState.playerProgress[visual.playerId ?? appState.selfId]?.level ?? 1) >= 10;
-  const actionFrames = !isLegend && attackActive && liuBeiAttackArtFrames.length
-    ? liuBeiAttackArtFrames
-    : !isLegend && visual.moving && liuBeiRunArtFrames.length ? liuBeiRunArtFrames : null;
-  if (actionFrames) {
-    const frameA = actionFrames[visual.facingFrameA ?? 0];
-    const frameB = actionFrames[visual.facingFrameB ?? 1];
-    if (visual.artFrameA !== frameA) {
-      visual.artFrameA = frameA;
-      visual.sprite.material.map = frameA;
-      visual.sprite.material.needsUpdate = true;
-    }
-    if (visual.artFrameB !== frameB) {
-      visual.artFrameB = frameB;
-      visual.blendSprite.material.map = frameB;
-      visual.blendSprite.material.needsUpdate = true;
-    }
-    visual.sprite.material.opacity = 1 - (visual.facingMix ?? 0);
-    visual.blendSprite.material.opacity = visual.facingMix ?? 0;
-  } else {
-    visual.artFrameA = null;
-    visual.artFrameB = null;
-  }
-  const swing = visual.swingGroup;
-  if (swing) {
-    swing.visible = attackActive && attackAge > .085 && attackAge < .31;
-    if (swing.visible) {
-      const t = Math.min(1, (attackAge - .085) / .22);
-      swing.rotation.y = -(visual.facing32 ?? 0) * Math.PI / 16 + t * 1.35 - .7;
-      swing.scale.setScalar(.62 + t * .85);
-      swing.children.forEach((arc, i) => {
-        arc.material.opacity = Math.max(0, Math.sin(t * Math.PI)) * (.7 - i * .13);
-        arc.rotation.z = -.5 + t * 1.05 + i * .1;
-      });
-    }
-  }
+  const attack = attackAge >= 0 && attackAge < .42;
+  const strike = attack ? Math.sin(Math.min(1, Math.max(0, attackAge / .42)) * Math.PI) : 0;
+  visual.leftLeg.rotation.x = stride * .62;
+  visual.rightLeg.rotation.x = -stride * .62;
+  visual.leftArm.rotation.x = -stride * .4;
+  visual.rightArm.rotation.x = stride * .4 + (attack ? -.25 + strike * 1.15 : 0);
+  visual.rightArm.rotation.z = attack ? -.25 - strike * .72 : -.12;
+  visual.leftArm.rotation.z = .12 + (attack ? strike * .15 : 0);
+  visual.bodyPivot.position.y = 1.38 + (visual.moving ? Math.abs(stride) * .055 : Math.sin(phase) * .012);
+  visual.bodyPivot.rotation.x = attack ? -.05 + strike * .11 : 0;
+  visual.headGroup.rotation.x = attack ? -strike * .07 : 0;
 }
 
 function setHero(heroId) {
@@ -579,8 +475,8 @@ function applyLevelChoice(playerId, upgradeId) {
 function createEnemy(position = null, id = null, hp = 2, elite = false, kind = elite ? "elite" : "grunt", bossIndex = -1) {
   hp = Math.max(1, Math.ceil(hp * ({ easy: .78, normal: 1, hard: 1.32 }[appState.difficulty] ?? 1)));
   const color = ({ grunt: 0x9c6b65, runner: 0xb49b6e, archer: 0x8097a0, elite: 0x817e72, boss: 0x685d61 }[kind] ?? 0x9c6b65);
-  const enemy = makeWarrior(color, false);
-  enemy.group.scale.setScalar(kind === "boss" ? 1.85 : kind === "elite" ? 1 : kind === "runner" ? .68 : kind === "archer" ? .84 : .78);
+  const enemy = makeWarrior(color, false, "liubei", kind);
+  enemy.group.scale.setScalar(kind === "boss" ? 1.48 : kind === "elite" ? 1 : kind === "runner" ? .88 : kind === "archer" ? .92 : .9);
   const speed = kind === "boss" ? 1.45 : kind === "runner" ? 4.2 : kind === "elite" ? 2.8 : kind === "archer" ? 1.7 : 2.3;
   enemy.group.userData = { id: id ?? `enemy-${++appState.enemySequence}`, hp, maxHp: hp, elite, kind, bossIndex, speed: speed + Math.random() * (kind === "boss" ? .1 : .55), alive: true, hitAt: 0 };
   if (kind === "boss") {
@@ -637,6 +533,56 @@ function makeProjectile(from, to, heroId = "liubei", upgrades = {}) {
     const start = new THREE.Vector3(mesh.position.x, 1.45, mesh.position.z);
     const target = new THREE.Vector3(to.x + sideX * lane * .45, 1.25, to.z + sideZ * lane * .45);
     appState.projectiles.push({ mesh, from: start, to: target, progress: 0, elapsed: 0, delay: shot * .07, heroId, upgrades: { ...upgrades } });
+  }
+}
+
+function spawnEnemyShot({ from, to, targetId, shotId, damage = 8 }) {
+  if (!from || !to) return;
+  const warning = new THREE.Group();
+  const warningFill = new THREE.Mesh(new THREE.CircleGeometry(1.15, 24), new THREE.MeshBasicMaterial({ color: 0xb77b6d, transparent: true, opacity: .13, depthWrite: false, side: THREE.DoubleSide }));
+  warningFill.rotation.x = -Math.PI / 2;
+  warningFill.position.y = .035;
+  const warningRing = new THREE.Mesh(new THREE.RingGeometry(1.05, 1.19, 24), new THREE.MeshBasicMaterial({ color: 0xb77b6d, transparent: true, opacity: .8, depthWrite: false, side: THREE.DoubleSide }));
+  warningRing.rotation.x = -Math.PI / 2;
+  warningRing.position.y = .045;
+  warning.add(warningFill, warningRing);
+  warning.position.set(to.x, 0, to.z);
+  world.add(warning);
+
+  const arrow = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(.09, .09, .88), new THREE.MeshStandardMaterial({ color: 0x9b8063, roughness: .68 }));
+  shaft.position.z = .16;
+  const head = new THREE.Mesh(new THREE.ConeGeometry(.14, .32, 4), new THREE.MeshStandardMaterial({ color: 0xb9aa78, metalness: .16, roughness: .42 }));
+  head.rotation.x = Math.PI / 2;
+  head.position.z = .72;
+  arrow.add(shaft, head);
+  arrow.visible = false;
+  projectileGroup.add(arrow);
+  const distance = Math.hypot(to.x - from.x, to.z - from.z);
+  appState.projectiles.push({
+    enemyShot: true, mesh: arrow, warning, from: new THREE.Vector3(from.x, 1.35, from.z),
+    to: new THREE.Vector3(to.x, 1.25, to.z), targetId, shotId,
+    elapsed: 0, delay: .48, duration: clamp(distance / 12, .48, 1.15), progress: 0,
+    damage, color: 0xb77b6d
+  });
+}
+
+function resolveEnemyShot(shot) {
+  if (!appState.host || !shot.targetId) return;
+  const targetPlayer = shot.targetId === appState.selfId ? null : appState.players.get(shot.targetId);
+  const targetPosition = shot.targetId === appState.selfId
+    ? localPlayer.group.position
+    : targetPlayer ? { x: targetPlayer.x, z: targetPlayer.z } : null;
+  if (!targetPosition || Math.hypot(targetPosition.x - shot.to.x, targetPosition.z - shot.to.z) > 1.25) return;
+  const vital = ensureVital(shot.targetId);
+  if (vital.downed || vital.eliminated) return;
+  vital.hp = Math.max(0, vital.hp - shot.damage);
+  if (vital.hp === 0) { vital.downed = true; vital.downedAt = Date.now(); vital.reviveProgress = 0; }
+  showHitBurst(shot.to.x, shot.to.z, "liubei", {});
+  if (shot.targetId === appState.selfId) {
+    playSound("hit");
+    $("combatFlash").classList.add("hit");
+    setTimeout(() => $("combatFlash").classList.remove("hit"), 130);
   }
 }
 
@@ -928,6 +874,7 @@ function handleSocketMessage(event) {
     const attacker = message.playerId === appState.selfId ? localPlayer : playerVisuals.get(message.playerId);
     if (attacker) attacker.attackAt = performance.now();
   }
+  if (message.type === "enemy-shot-fx" && message.from && message.to) spawnEnemyShot(message);
   if (message.type === "ability") {
     const heroId = appState.players.get(message.playerId)?.heroId ?? "liubei";
     const upgrades = appState.playerProgress[message.playerId]?.upgrades ?? {};
@@ -1029,6 +976,10 @@ function applyGameState(state) {
     seen.add(snapshot.id);
     let enemy = appState.enemies.find((item) => item.group.userData.id === snapshot.id);
     if (!enemy) enemy = createEnemy({ x: snapshot.x, z: snapshot.z }, snapshot.id, snapshot.hp, snapshot.elite, snapshot.kind, snapshot.bossIndex);
+    const stepX = snapshot.x - enemy.group.position.x;
+    const stepZ = snapshot.z - enemy.group.position.z;
+    enemy.moving = Math.hypot(stepX, stepZ) > .025;
+    if (enemy.moving) enemy.group.rotation.y = Math.atan2(stepX, stepZ);
     enemy.group.position.set(snapshot.x, 0, snapshot.z);
     enemy.group.userData.hp = snapshot.hp;
     enemy.group.userData.elite = Boolean(snapshot.elite);
@@ -1170,6 +1121,16 @@ function clearRun() {
   appState.enemies.length = 0;
   for (const pickup of appState.pickups) removePickup(pickup);
   appState.pickups.length = 0;
+  for (const projectile of appState.projectiles) {
+    if (projectile.warning) {
+      world.remove(projectile.warning);
+      projectile.warning.traverse((node) => { node.geometry?.dispose(); node.material?.dispose(); });
+    }
+    if (projectile.mesh) {
+      projectileGroup.remove(projectile.mesh);
+      projectile.mesh.traverse((node) => { node.geometry?.dispose(); node.material?.dispose(); });
+    }
+  }
   appState.projectiles.length = 0;
   appState.nextPlayerAttacks.clear();
   appState.enemySequence = 0;
@@ -1344,13 +1305,37 @@ function updateCombat(now, delta) {
       }
       const dx = target.position.x - enemy.group.position.x;
       const dz = target.position.z - enemy.group.position.z;
-      const desiredDistance = data.kind === "archer" ? 10 : data.kind === "boss" ? 1.8 : 1.65;
+      if (data.kind === "archer") {
+        enemy.group.rotation.y = Math.atan2(dx, dz);
+        enemy.moving = distance > 12 || distance < 7.5;
+        if (distance > 12) {
+          enemy.group.position.x += dx / Math.max(distance, .001) * data.speed * delta;
+          enemy.group.position.z += dz / Math.max(distance, .001) * data.speed * delta;
+        } else if (distance < 7.5) {
+          enemy.group.position.x -= dx / Math.max(distance, .001) * data.speed * 1.15 * delta;
+          enemy.group.position.z -= dz / Math.max(distance, .001) * data.speed * 1.15 * delta;
+        }
+        if (distance < 20 && now - (data.shotAt ?? 0) > 1900) {
+          data.shotAt = now;
+          enemy.attackAt = now;
+          const shotId = `${data.id}-${Math.floor(now)}`;
+          const from = { x: enemy.group.position.x, z: enemy.group.position.z };
+          const to = { x: target.position.x, z: target.position.z };
+          const damage = (data.kind === "boss" ? 12 : 8) * ({ easy: .72, normal: 1, hard: 1.35 }[appState.difficulty] ?? 1);
+          spawnEnemyShot({ from, to, targetId: target.id, shotId, damage });
+          if (appState.socket?.readyState === WebSocket.OPEN) appState.socket.send(JSON.stringify({ type: "enemy-shot-fx", from, to, targetId: target.id, shotId, damage }));
+        }
+        continue;
+      }
+      const desiredDistance = data.kind === "boss" ? 1.8 : 1.65;
+      enemy.moving = distance > desiredDistance;
+      enemy.group.rotation.y = Math.atan2(dx, dz);
       if (distance > desiredDistance) {
         enemy.group.position.x += dx / Math.max(distance, .001) * data.speed * delta;
         enemy.group.position.z += dz / Math.max(distance, .001) * data.speed * delta;
-        enemy.group.rotation.y = Math.atan2(dx, dz);
       } else if (now - data.hitAt > (data.kind === "boss" ? 1750 : data.kind === "archer" ? 1350 : 1100)) {
         data.hitAt = now;
+        enemy.attackAt = now;
         if (now >= appState.nextTeamHit) {
           const damage = (data.kind === "boss" ? 15 : data.kind === "elite" ? 9 : data.kind === "archer" ? 6 : data.kind === "runner" ? 5 : 7) * ({ easy: .72, normal: 1, hard: 1.35 }[appState.difficulty] ?? 1);
           const vital = ensureVital(target.id);
@@ -1365,8 +1350,6 @@ function updateCombat(now, delta) {
         }
         if (target.id === appState.selfId) {
           playSound("hit");
-          localPlayer.body.material.color.setHex(0xc08c7d);
-          setTimeout(() => localPlayer.body.material.color.setHex(HEROES[appState.heroId]?.color ?? COLORS[0]), 140);
           $("combatFlash").classList.add("hit");
           setTimeout(() => $("combatFlash").classList.remove("hit"), 130);
         }
@@ -1513,6 +1496,21 @@ function updateCombat(now, delta) {
   }
   for (const projectile of appState.projectiles) {
     projectile.elapsed += delta;
+    if (projectile.enemyShot) {
+      if (projectile.warning) {
+        const pulse = .93 + Math.sin(projectile.elapsed * 22) * .07;
+        projectile.warning.scale.setScalar(pulse);
+        projectile.warning.children[0].material.opacity = .1 + (Math.sin(projectile.elapsed * 22) + 1) * .035;
+      }
+      if (projectile.elapsed < projectile.delay) continue;
+      projectile.warning.visible = false;
+      projectile.mesh.visible = true;
+      projectile.progress = Math.min(1, projectile.progress + delta / projectile.duration);
+      projectile.mesh.position.lerpVectors(projectile.from, projectile.to, projectile.progress);
+      projectile.mesh.position.y += Math.sin(projectile.progress * Math.PI) * 1.15;
+      projectile.mesh.rotation.y = Math.atan2(projectile.to.x - projectile.from.x, projectile.to.z - projectile.from.z);
+      continue;
+    }
     if (projectile.elapsed < (projectile.delay ?? 0)) continue;
     projectile.progress += delta * 4.2;
     projectile.mesh.position.lerpVectors(projectile.from, projectile.to, Math.min(projectile.progress, 1));
@@ -1520,6 +1518,17 @@ function updateCombat(now, delta) {
   }
   appState.projectiles = appState.projectiles.filter((projectile) => {
     if (projectile.progress < 1) return true;
+    if (projectile.enemyShot) {
+      resolveEnemyShot(projectile);
+      if (projectile.warning) {
+        world.remove(projectile.warning);
+        projectile.warning.traverse((node) => { node.geometry?.dispose(); node.material?.dispose(); });
+      }
+      projectileGroup.remove(projectile.mesh);
+      projectile.mesh.traverse((node) => { node.geometry?.dispose(); node.material?.dispose(); });
+      showHitBurst(projectile.to.x, projectile.to.z, "caocao", {});
+      return false;
+    }
     showHitBurst(projectile.to.x, projectile.to.z, projectile.heroId, projectile.upgrades);
     projectileGroup.remove(projectile.mesh);
     projectile.mesh.geometry.dispose();
@@ -1563,14 +1572,13 @@ function animate() {
     localPlayer.group.rotation.y += delta * .08;
   }
   updateCamera();
-  updateLiuBeiFacing(localPlayer);
-  updateLiuBeiMotion(localPlayer, now);
+  updateWarriorMotion(localPlayer, now);
   updateProgressionEquipment(localPlayer, appState.playerProgress[appState.selfId], now, delta);
   for (const visual of playerVisuals.values()) {
-    updateLiuBeiFacing(visual);
-    updateLiuBeiMotion(visual, now);
+    updateWarriorMotion(visual, now);
     updateProgressionEquipment(visual, appState.playerProgress[visual.playerId], now, delta);
   }
+  for (const enemy of appState.enemies) updateWarriorMotion(enemy, now);
   renderer.render(scene, camera);
 }
 
