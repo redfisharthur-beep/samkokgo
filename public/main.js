@@ -16,10 +16,10 @@ const appState = {
   screen: "home", roomId: null, room: null, selfId: null, host: false,
   players: new Map(), socket: null, cameraMode: 0, startedAt: null,
   secondsLeft: ROUND_SECONDS, xp: 0, level: 1, muted: false, lastInput: 0,
-  pointer: null, move: { x: 0, z: 0 }, enemies: [], projectiles: [],
+  pointer: null, move: { x: 0, z: 0 }, enemies: [], pickups: [], projectiles: [],
   nextSpawn: 0, nextAttack: 0, lastGameSync: 0, enemySequence: 0,
   nextPlayerAttacks: new Map(), teamHealth: 100, energy: 0, abilityPending: false,
-  nextTeamHit: 0, bursts: [], toastTimer: 0
+  nextTeamHit: 0, bursts: [], toastTimer: 0, pickupSequence: 0
 };
 
 const renderer = new THREE.WebGLRenderer({ canvas: $("world"), antialias: true, alpha: false, powerPreference: "low-power" });
@@ -63,6 +63,8 @@ world.add(localPlayer.group);
 const playerVisuals = new Map();
 const enemyGroup = new THREE.Group();
 world.add(enemyGroup);
+const pickupGroup = new THREE.Group();
+world.add(pickupGroup);
 const projectileGroup = new THREE.Group();
 world.add(projectileGroup);
 
@@ -197,6 +199,33 @@ function makeProjectile(from, to) {
   appState.projectiles.push({ mesh, from: mesh.position.clone(), to: new THREE.Vector3(to.x, 1.25, to.z), progress: 0, target: to });
 }
 
+function createPickup(position, id = null, type = "energy") {
+  const group = new THREE.Group();
+  const color = type === "heal" ? 0xb77b6d : 0xc2a56f;
+  const material = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: .28, roughness: .45, metalness: .08 });
+  const core = new THREE.Mesh(new THREE.OctahedronGeometry(.42, 0), material);
+  core.position.y = 1.05;
+  core.castShadow = true;
+  group.add(core);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(.62, .055, 6, 24), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: .82 }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = .16;
+  group.add(ring);
+  group.position.set(position.x, 0, position.z);
+  pickupGroup.add(group);
+  const pickup = { id: id ?? `supply-${++appState.pickupSequence}`, type, group, core, ring, age: 0, expiresAt: performance.now() + 18000 };
+  appState.pickups.push(pickup);
+  return pickup;
+}
+
+function removePickup(pickup) {
+  pickupGroup.remove(pickup.group);
+  pickup.core.geometry.dispose();
+  pickup.core.material.dispose();
+  pickup.ring.geometry.dispose();
+  pickup.ring.material.dispose();
+}
+
 function showAbilityBurst(x, z) {
   const ring = new THREE.Mesh(new THREE.RingGeometry(.82, 1, 36), new THREE.MeshBasicMaterial({ color: 0xd3b878, transparent: true, opacity: .82, side: THREE.DoubleSide, depthWrite: false }));
   ring.rotation.x = -Math.PI / 2;
@@ -211,6 +240,10 @@ function awardKill(enemy) {
   enemyGroup.remove(enemy.group);
   appState.xp += enemy.group.userData.elite ? 2 : 1;
   appState.energy = Math.min(100, appState.energy + (enemy.group.userData.elite ? 22 : 12));
+  if (enemy.group.userData.elite || Math.random() < .24) {
+    const type = appState.teamHealth < 72 && (enemy.group.userData.elite || Math.random() < .58) ? "heal" : "energy";
+    createPickup(enemy.group.position, null, type);
+  }
   if (appState.xp >= 7 + appState.level * 2) {
     appState.xp = 0;
     appState.level += 1;
@@ -398,6 +431,18 @@ function applyGameState(state) {
     enemyGroup.remove(enemy.group);
     return false;
   });
+  const seenPickups = new Set();
+  for (const snapshot of state.pickups ?? []) {
+    seenPickups.add(snapshot.id);
+    let pickup = appState.pickups.find((item) => item.id === snapshot.id);
+    if (!pickup) pickup = createPickup({ x: snapshot.x, z: snapshot.z }, snapshot.id, snapshot.type);
+    pickup.group.position.set(snapshot.x, 0, snapshot.z);
+  }
+  appState.pickups = appState.pickups.filter((pickup) => {
+    if (seenPickups.has(pickup.id)) return true;
+    removePickup(pickup);
+    return false;
+  });
   if (appState.teamHealth <= 0) finishRun(false);
 }
 
@@ -480,15 +525,19 @@ function returnHome() {
 function clearRun() {
   appState.startedAt = null;
   appState.enemies.length = 0;
+  for (const pickup of appState.pickups) removePickup(pickup);
+  appState.pickups.length = 0;
   appState.projectiles.length = 0;
   appState.nextPlayerAttacks.clear();
   appState.enemySequence = 0;
+  appState.pickupSequence = 0;
   appState.lastGameSync = 0;
   appState.teamHealth = 100;
   appState.energy = 0;
   appState.abilityPending = false;
   appState.nextTeamHit = 0;
   enemyGroup.clear();
+  pickupGroup.clear();
   projectileGroup.clear();
   for (const burst of appState.bursts) {
     world.remove(burst.mesh);
@@ -578,6 +627,15 @@ function updateAbilityBursts(delta) {
   });
 }
 
+function updatePickups(delta) {
+  for (const pickup of appState.pickups) {
+    pickup.age += delta;
+    pickup.core.rotation.y += delta * 1.8;
+    pickup.core.rotation.x += delta * .65;
+    pickup.group.position.y = Math.sin(pickup.age * 3.2) * .12;
+  }
+}
+
 function updateCombat(now, delta) {
   if (appState.screen !== "game") return;
   if (appState.host) {
@@ -631,6 +689,20 @@ function updateCombat(now, delta) {
         appState.nextPlayerAttacks.set(player.id, now + Math.max(300, 780 - appState.level * 15));
       }
     }
+    appState.pickups = appState.pickups.filter((pickup) => {
+      if (now >= pickup.expiresAt) {
+        removePickup(pickup);
+        return false;
+      }
+      const collector = party.find((player) => player.position.distanceTo(pickup.group.position) < 1.7);
+      if (!collector) return true;
+      if (pickup.type === "heal") appState.teamHealth = Math.min(100, appState.teamHealth + 24);
+      else appState.energy = Math.min(100, appState.energy + 32);
+      showAbilityBurst(pickup.group.position.x, pickup.group.position.z);
+      removePickup(pickup);
+      renderVitals();
+      return false;
+    });
     appState.enemies = appState.enemies.filter((enemy) => enemy.group.userData.alive);
     if (appState.socket?.readyState === WebSocket.OPEN && now - appState.lastGameSync > 150) {
       appState.lastGameSync = now;
@@ -641,6 +713,12 @@ function updateCombat(now, delta) {
           level: appState.level,
           teamHealth: appState.teamHealth,
           energy: appState.energy,
+          pickups: appState.pickups.map((pickup) => ({
+            id: pickup.id,
+            x: pickup.group.position.x,
+            z: pickup.group.position.z,
+            type: pickup.type
+          })),
           enemies: appState.enemies.map((enemy) => ({
             id: enemy.group.userData.id,
             x: enemy.group.position.x,
@@ -692,6 +770,7 @@ function animate() {
   if (appState.screen === "game") updateMovement(delta);
   updateRemotePlayers(delta);
   updateAbilityBursts(delta);
+  updatePickups(delta);
   updateCombat(now, delta);
   if (appState.screen === "home") {
     localPlayer.group.position.set(Math.sin(now * .00025) * 1.8, 0, Math.cos(now * .00025) * .9);
