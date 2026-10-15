@@ -523,6 +523,7 @@ function showRunTrail(x, z, heroId) {
   const ring = new THREE.Mesh(new THREE.RingGeometry(.12, .2, 14), new THREE.MeshBasicMaterial({ color: colors[heroId] ?? 0xb9aa78, transparent: true, opacity: .35, side: THREE.DoubleSide, depthWrite: false }));
   ring.rotation.x = -Math.PI / 2;
   ring.position.set(x, .08, z);
+  ring.scale.setScalar(.1);
   world.add(ring);
   appState.bursts.push({ mesh: ring, age: 0, duration: .28, scaleTo: 3.2 });
 }
