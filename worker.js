@@ -103,12 +103,14 @@ export class GameHub extends DurableObject {
     const [client, server] = Object.values(pair);
     const playerId = crypto.randomUUID();
     const hostId = room.hostId ?? playerId;
+    const spawnPoints = [[0, 0], [-3, 0], [3, 0], [0, -3], [-2, 3], [2, 3]];
+    const [spawnX, spawnZ] = spawnPoints[existing.length] ?? [0, 0];
     const attachment = {
       roomId,
       playerId,
       host: playerId === hostId,
-      x: 0,
-      z: 0,
+      x: spawnX,
+      z: spawnZ,
       colorIndex: existing.length % 6,
       moveX: 0,
       moveZ: 0
