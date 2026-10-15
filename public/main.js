@@ -156,33 +156,61 @@ world.add(floor);
 const blockGeometryCache = new Map();
 const blockMaterialCache = new Map();
 const pixelTextureCache = new Map();
-function pixelTexture(kind = "cloth", variant = 0) {
-  const cacheKey = `${kind}:${variant}`;
+function pixelTexture(kind = "cloth", variant = 0, style = "world") {
+  const cacheKey = `${kind}:${style}`;
   if (pixelTextureCache.has(cacheKey)) return pixelTextureCache.get(cacheKey);
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 128;
   const ctx = canvas.getContext("2d");
   const seedByKind = { cloth: 17, armor: 31, stone: 47, wood: 59, grass: 71, skin: 83 };
-  let seed = ((seedByKind[kind] ?? 101) + Number(variant)) >>> 0;
+  const styleSeed = [...style].reduce((sum, char) => sum * 31 + char.charCodeAt(0), 0);
+  let seed = ((seedByKind[kind] ?? 101) + styleSeed + Number(variant)) >>> 0;
   const random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
   ctx.fillStyle = "#f4f1e8";
   ctx.fillRect(0, 0, 128, 128);
   const shades = { cloth: [220, 248], armor: [203, 252], stone: [214, 248], wood: [213, 248], grass: [217, 249], skin: [229, 253] }[kind] ?? [218, 249];
-  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+  const pixel = 2;
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
     const value = Math.round(shades[0] + random() * (shades[1] - shades[0]));
     ctx.fillStyle = `rgb(${value},${value},${value})`;
-    ctx.fillRect(x * 8, y * 8, 8, 8);
-    if (kind === "armor" && y % 4 === 0 && x % 4 !== 0) {
-      ctx.fillStyle = `rgb(${Math.min(255, value + 5)},${Math.min(255, value + 5)},${Math.min(255, value + 5)})`;
-      ctx.fillRect(x * 8 + 2, y * 8 + 2, 4, 2);
+    ctx.fillRect(x * pixel, y * pixel, pixel, pixel);
+    if (kind === "armor" && y % 8 === 0 && x % 8 !== 0) {
+      ctx.fillStyle = `rgb(${Math.min(255, value + 10)},${Math.min(255, value + 10)},${Math.min(255, value + 10)})`;
+      ctx.fillRect(x * pixel, y * pixel, pixel, pixel);
+      if (x % 8 === 2) { ctx.fillStyle = "rgb(184,159,108)"; ctx.fillRect(x * pixel, y * pixel, pixel, pixel); }
     }
-    if (kind === "cloth" && y % 5 === 2 && x % 4 === 1) {
-      ctx.fillStyle = `rgb(${Math.max(0, value - 8)},${Math.max(0, value - 8)},${Math.max(0, value - 8)})`;
-      ctx.fillRect(x * 8, y * 8 + 6, 8, 2);
+    if (kind === "cloth" && y % 8 === 3 && x % 4 === 1) {
+      ctx.fillStyle = `rgb(${Math.max(0, value - 17)},${Math.max(0, value - 17)},${Math.max(0, value - 17)})`;
+      ctx.fillRect(x * pixel, y * pixel, pixel, pixel);
+      if ((style === "liubei" || style === "caocao" || style === "sunquan" || style === "lvbu") && x % 16 === 5) {
+        ctx.fillStyle = "rgb(248,230,183)";
+        ctx.fillRect(x * pixel, y * pixel, pixel, pixel);
+      }
     }
     if ((kind === "stone" || kind === "grass") && random() > .91) {
-      ctx.fillStyle = `rgb(${Math.max(0, value - 12)},${Math.max(0, value - 12)},${Math.max(0, value - 12)})`;
-      ctx.fillRect(x * 8 + 2, y * 8 + 2, 3, 3);
+      const shade = Math.max(0, value - 18);
+      ctx.fillStyle = `rgb(${shade},${shade},${shade})`;
+      ctx.fillRect(x * pixel, y * pixel, pixel, pixel);
+    }
+    if (kind === "skin" && ((x + styleSeed) % 19 === 0) && y % 16 > 3 && y % 16 < 9) {
+      ctx.fillStyle = "rgb(255,250,235)";
+      ctx.fillRect(x * pixel, y * pixel, pixel, pixel);
+    }
+    if (kind === "wood" && x % 11 === (styleSeed % 5) && y % 8 > 1) {
+      ctx.fillStyle = `rgb(${Math.max(0, value - 16)},${Math.max(0, value - 16)},${Math.max(0, value - 16)})`;
+      ctx.fillRect(x * pixel, y * pixel, pixel, pixel);
+    }
+  }
+  if (kind === "cloth" && ["liubei", "caocao", "sunquan", "lvbu", "grunt", "runner", "archer", "elite", "boss"].includes(style)) {
+    const motif = style === "liubei" ? 0 : style === "caocao" ? 1 : style === "sunquan" ? 2 : style === "lvbu" ? 3 : style === "archer" ? 4 : style === "boss" ? 5 : style === "elite" ? 6 : style === "runner" ? 7 : 8;
+    const cx = 8 + (motif % 4) * 12;
+    for (let band = 0; band < 4; band++) {
+      const y = 6 + band * 16;
+      ctx.fillStyle = motif % 2 ? "rgb(237,216,171)" : "rgb(235,231,210)";
+      ctx.fillRect((cx + band % 2 * 4) * pixel, y * pixel, 2 * pixel, 2 * pixel);
+      ctx.fillRect((cx + 2 + band % 2 * 4) * pixel, (y + 2) * pixel, 2 * pixel, 2 * pixel);
+      ctx.fillStyle = "rgb(198,169,116)";
+      ctx.fillRect((cx + 4 + band % 2 * 4) * pixel, (y + 4) * pixel, 2 * pixel, 2 * pixel);
     }
   }
   const texture = new THREE.CanvasTexture(canvas);
@@ -202,8 +230,11 @@ function blockGeometry(width, height, depth) {
 function addBlock(parent, size, color, position, materialOptions = {}) {
   const options = { color, roughness: .82, metalness: .02, ...materialOptions };
   const textureKind = options.metalness > .1 ? "armor" : PIXEL_SKIN_COLORS.has(color) ? "skin" : color === 0x9b8063 || color === 0x8b745c || color === 0x746954 ? "wood" : options.roughness >= .95 ? "stone" : "cloth";
-  options.map = pixelTexture(textureKind, color);
-  const key = `${textureKind}|${Object.entries(options).filter(([name]) => name !== "map").sort(([a], [b]) => a.localeCompare(b)).map(([name, value]) => `${name}:${value}`).join("|")}`;
+  let owner = parent;
+  while (owner && !owner.userData?.pixelStyle) owner = owner.parent;
+  const pixelStyle = owner?.userData?.pixelStyle ?? "world";
+  options.map = pixelTexture(textureKind, color, pixelStyle);
+  const key = `${textureKind}|${pixelStyle}|${Object.entries(options).filter(([name]) => name !== "map").sort(([a], [b]) => a.localeCompare(b)).map(([name, value]) => `${name}:${value}`).join("|")}`;
   if (!blockMaterialCache.has(key)) blockMaterialCache.set(key, new THREE.MeshStandardMaterial(options));
   const material = blockMaterialCache.get(key);
   const mesh = new THREE.Mesh(blockGeometry(...size), material);
@@ -329,6 +360,29 @@ function makeTree(leafColor, trunkColor) {
 
 function addProgressionEquipment(group, heroId) {
   const color = ({ liubei: 0xb9aa78, caocao: 0xa69b7d, sunquan: 0x91a9a8, lvbu: 0xb77b6d }[heroId] ?? 0xb9aa78);
+  const firstUpgrade = new THREE.Group();
+  addBlock(firstUpgrade, [.53, .24, .56], color, [-.67, 1.72, 0], { metalness: .18, roughness: .5 });
+  addBlock(firstUpgrade, [.53, .24, .56], color, [.67, 1.72, 0], { metalness: .18, roughness: .5 });
+  addBlock(firstUpgrade, [.62, .2, .13], color, [0, 1.46, .42], { metalness: .16, roughness: .5 });
+  addBlock(firstUpgrade, [.13, .13, .15], 0xf0dfaa, [0, 1.46, .51], { metalness: .2, roughness: .4 });
+  firstUpgrade.visible = false;
+  group.add(firstUpgrade);
+  const secondUpgrade = new THREE.Group();
+  addBlock(secondUpgrade, [.78, .98, .12], 0x555f54, [0, 1.17, -.42]);
+  addBlock(secondUpgrade, [.9, .17, .13], color, [0, .72, -.43], { metalness: .16, roughness: .5 });
+  addBlock(secondUpgrade, [.1, .62, .11], color, [-.28, 1.34, -.5], { metalness: .2, roughness: .45 });
+  addBlock(secondUpgrade, [.1, .62, .11], color, [.28, 1.34, -.5], { metalness: .2, roughness: .45 });
+  secondUpgrade.visible = false;
+  group.add(secondUpgrade);
+  const thirdUpgrade = new THREE.Group();
+  for (const side of [-1, 1]) {
+    const wing = addBlock(thirdUpgrade, [.22, 1.12, .15], color, [side * .7, 1.84, -.12], { metalness: .18, roughness: .5 });
+    wing.rotation.z = side * -.35;
+    addBlock(thirdUpgrade, [.32, .16, .16], 0xe4d7bb, [side * .79, 2.24, -.1], { metalness: .12 });
+  }
+  addBlock(thirdUpgrade, [.24, .46, .2], 0xc3a56f, [0, 2.12, -.5], { metalness: .2, roughness: .42 });
+  thirdUpgrade.visible = false;
+  group.add(thirdUpgrade);
   const ringMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: .65, side: THREE.DoubleSide, depthWrite: false });
   const floorRing = new THREE.Mesh(new THREE.RingGeometry(.78, .88, 36), ringMaterial.clone());
   floorRing.rotation.x = -Math.PI / 2;
@@ -352,7 +406,7 @@ function addProgressionEquipment(group, heroId) {
   }
   jewels.visible = false;
   group.add(jewels);
-  return { floorRing, waistRing, crownRing, jewels };
+  return { floorRing, waistRing, crownRing, jewels, firstUpgrade, secondUpgrade, thirdUpgrade };
 }
 
 function updateProgressionEquipment(visual, progress, now, delta) {
@@ -368,6 +422,9 @@ function updateProgressionEquipment(visual, progress, now, delta) {
   gear.waistRing.visible = tier >= 2;
   gear.crownRing.visible = tier >= 3;
   gear.jewels.visible = tier >= 2;
+  gear.firstUpgrade.visible = tier >= 1;
+  gear.secondUpgrade.visible = tier >= 2;
+  gear.thirdUpgrade.visible = tier >= 3;
   gear.floorRing.scale.setScalar(1 + tier * .1);
   gear.waistRing.rotation.y = now * .00055;
   gear.crownRing.rotation.y = -now * .00072;
@@ -381,6 +438,7 @@ function updateProgressionEquipment(visual, progress, now, delta) {
 function makeWarrior(color, hero = false, heroId = "liubei", enemyKind = "grunt") {
   const group = new THREE.Group();
   enemyKind = hero ? null : enemyKind;
+  group.userData.pixelStyle = hero ? heroId : enemyKind;
   const schemes = {
     liubei: { cloth: 0x718779, armor: 0x685f4e, trim: 0xc0a66e, dark: 0x3d4943, skin: 0xd6b99d, accent: 0x9dac8d },
     caocao: { cloth: 0x4d5554, armor: 0x7b7161, trim: 0xc0a66e, dark: 0x343b3a, skin: 0xcdb59e, accent: 0x876f68 },
@@ -414,6 +472,23 @@ function makeWarrior(color, hero = false, heroId = "liubei", enemyKind = "grunt"
     addBlock(bodyPivot, [.46, .13, .17], palette.accent, [side * .31, -.43, .31]);
     const shoulder = addBlock(bodyPivot, [.42, .28, .48], palette.armor, [side * .63, .36, .015], { metalness: .1 });
     shoulder.rotation.z = side * -.08;
+  }
+  if (enemyKind === "boss") {
+    addBlock(bodyPivot, [1.18, .28, .62], 0x383e3e, [0, .48, -.02], { metalness: .14, roughness: .55 });
+    addBlock(bodyPivot, [.3, .42, .16], 0xb47e72, [0, .08, .51], { metalness: .12 });
+    for (const side of [-1, 1]) {
+      const spike = addBlock(bodyPivot, [.18, .52, .2], 0xc1a56f, [side * .82, .55, -.04], { metalness: .22, roughness: .42 });
+      spike.rotation.z = side * -.42;
+    }
+    addBlock(bodyPivot, [.76, .14, .13], 0x332f34, [0, -.82, -.08]);
+  } else if (enemyKind === "elite") {
+    addBlock(bodyPivot, [.34, .46, .18], palette.trim, [0, .03, .52], { metalness: .18, roughness: .48 });
+    addBlock(bodyPivot, [.2, .15, .12], palette.accent, [0, -.06, .63]);
+  } else if (enemyKind === "runner") {
+    for (const side of [-1, 1]) {
+      addBlock(bodyPivot, [.42, .17, .48], palette.accent, [side * .3, -.88, .03]);
+      addBlock(bodyPivot, [.14, .3, .14], palette.trim, [side * .43, -.25, .23], { metalness: .12 });
+    }
   }
   const headGroup = new THREE.Group();
   headGroup.position.set(0, .78, .015);
@@ -727,6 +802,7 @@ function showRunTrail(x, z, heroId) {
 
 function createPickup(position, id = null, type = "energy") {
   const group = new THREE.Group();
+  group.userData.pixelStyle = `item-${type}`;
   const color = type === "heal" ? 0xb77b6d : 0xc2a56f;
   const core = new THREE.Group();
   if (type === "heal") {
