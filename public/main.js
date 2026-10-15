@@ -226,7 +226,7 @@ async function joinRoom(roomId) {
   closeSocket();
   appState.roomId = roomId;
   appState.players.clear();
-  localPlayer.group.position.set((Math.random() - .5) * 5, 0, (Math.random() - .5) * 5);
+  localPlayer.group.position.set(0, 0, 0);
   setScreen("room");
   try {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -286,6 +286,7 @@ function setPlayers(players) {
     next.set(player.id, player);
     if (player.id === appState.selfId) {
       appState.host = Boolean(player.host);
+      if (appState.screen === "room") localPlayer.group.position.set(player.x, 0, player.z);
       continue;
     }
     let visual = playerVisuals.get(player.id);
