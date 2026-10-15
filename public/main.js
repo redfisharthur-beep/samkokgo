@@ -105,14 +105,42 @@ const liuBeiLegendTextures = Object.fromEntries(liuBeiViews.map((view) => {
   texture.magFilter = THREE.LinearFilter;
   return [view, texture];
 }));
+function sliceLiuBeiAtlas(texture) {
+  const image = texture.image;
+  const cellWidth = Math.floor(image.naturalWidth / 8);
+  const cellHeight = Math.floor(image.naturalHeight / 4);
+  return Array.from({ length: 32 }, (_, index) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = cellWidth;
+    canvas.height = cellHeight;
+    const context = canvas.getContext("2d");
+    const column = index % 8;
+    const row = Math.floor(index / 8);
+    context.drawImage(image, column * cellWidth, row * cellHeight, cellWidth, cellHeight, 0, 0, cellWidth, cellHeight);
+    const frame = new THREE.CanvasTexture(canvas);
+    frame.colorSpace = THREE.SRGBColorSpace;
+    frame.minFilter = THREE.LinearMipmapLinearFilter;
+    frame.magFilter = THREE.LinearFilter;
+    frame.generateMipmaps = true;
+    return frame;
+  });
+}
+let liuBeiRunArtFrames = [];
+let liuBeiAttackArtFrames = [];
+liuBeiTextureLoader.load("/assets/characters/liubei/run-32.svg", (texture) => {
+  liuBeiRunArtFrames = sliceLiuBeiAtlas(texture);
+});
+liuBeiTextureLoader.load("/assets/characters/liubei/attack-32.svg", (texture) => {
+  liuBeiAttackArtFrames = sliceLiuBeiAtlas(texture);
+});
 // Authored key poses drive a deterministic 6-frame run cycle and 7-frame attack.
-// The 32 facing bins blend neighboring painted views while keeping these clips in sync.
-const liuBeiRunFrames = [
+// These motion key poses animate the authored 32-angle run and attack art.
+const liuBeiRunPoseFrames = [
   { y: 0, x: 0, w: 0, h: 0 }, { y: .045, x: -.025, w: -.025, h: -.015 },
   { y: .11, x: -.045, w: -.04, h: -.035 }, { y: .065, x: .02, w: -.02, h: -.02 },
   { y: 0, x: .045, w: 0, h: 0 }, { y: .065, x: .025, w: -.02, h: -.02 }
 ];
-const liuBeiAttackFrames = [
+const liuBeiAttackPoseFrames = [
   { x: 0, y: 0, w: 0, h: 0 }, { x: -.08, y: -.02, w: -.06, h: .025 },
   { x: -.04, y: .015, w: .02, h: -.025 }, { x: .13, y: .055, w: .12, h: -.09 },
   { x: .17, y: .045, w: .1, h: -.06 }, { x: .08, y: .015, w: .04, h: -.025 },
@@ -381,11 +409,16 @@ function updateLiuBeiFacing(visual) {
   let relative = visual.group.rotation.y - toCamera;
   while (relative > Math.PI) relative -= Math.PI * 2;
   while (relative < -Math.PI) relative += Math.PI * 2;
-  const angleStep = Math.PI * 2 / 32;
-  const facing32 = ((Math.round(relative / angleStep) % 32) + 32) % 32;
+  const fullTurn = Math.PI * 2;
+  const turn = ((relative % fullTurn) + fullTurn) % fullTurn;
+  const anglePosition = turn / fullTurn * 32;
+  const facing32 = Math.floor(anglePosition) % 32;
   visual.facing32 = facing32;
+  visual.facingMix = anglePosition - Math.floor(anglePosition);
+  visual.facingFrameA = facing32;
+  visual.facingFrameB = (facing32 + 1) % 32;
   const viewsByOctant = liuBeiViews;
-  const viewPosition = ((facing32 / 4) % 8 + 8) % 8;
+  const viewPosition = turn / (Math.PI / 4);
   const lower = Math.floor(viewPosition);
   const upper = (lower + 1) % 8;
   const mix = viewPosition - lower;
@@ -415,18 +448,18 @@ function updateLiuBeiMotion(visual, now) {
   const attackAge = (now - visual.attackAt) / 1000;
   const attackActive = attackAge >= 0 && attackAge < .42;
   const runPosition = (now % 600) / 100;
-  const runIndex = Math.floor(runPosition) % liuBeiRunFrames.length;
+  const runIndex = Math.floor(runPosition) % liuBeiRunPoseFrames.length;
   const sample = (frames, position) => {
     const index = Math.min(frames.length - 1, Math.floor(position));
     const next = Math.min(frames.length - 1, index + 1);
     const t = THREE.MathUtils.smoothstep(position - index, 0, 1);
     return Object.fromEntries(Object.keys(frames[index]).map((key) => [key, THREE.MathUtils.lerp(frames[index][key], frames[next][key], t)]));
   };
-  const runPose = visual.moving ? sample(liuBeiRunFrames, runPosition) : { y: Math.sin(now * .003) * .012, x: 0, w: 0, h: 0 };
+  const runPose = visual.moving ? sample(liuBeiRunPoseFrames, runPosition) : { y: Math.sin(now * .003) * .012, x: 0, w: 0, h: 0 };
   visual.runFrame = visual.moving ? runIndex : 0;
-  const attackPosition = attackAge / .42 * (liuBeiAttackFrames.length - 1);
-  const attackPose = attackActive ? sample(liuBeiAttackFrames, attackPosition) : { x: 0, y: 0, w: 0, h: 0 };
-  visual.attackFrame = attackActive ? Math.min(liuBeiAttackFrames.length - 1, Math.floor(attackPosition)) : -1;
+  const attackPosition = attackAge / .42 * (liuBeiAttackPoseFrames.length - 1);
+  const attackPose = attackActive ? sample(liuBeiAttackPoseFrames, attackPosition) : { x: 0, y: 0, w: 0, h: 0 };
+  visual.attackFrame = attackActive ? Math.min(liuBeiAttackPoseFrames.length - 1, Math.floor(attackPosition)) : -1;
   const strike = attackActive ? Math.sin(Math.min(1, Math.max(0, (attackAge - .09) / .16)) * Math.PI) : 0;
   visual.sprite.position.y = 1.72 + runPose.y + attackPose.y;
   visual.blendSprite.position.y = visual.sprite.position.y;
@@ -438,6 +471,28 @@ function updateLiuBeiMotion(visual, now) {
   visual.blendSprite.scale.copy(visual.sprite.scale);
   visual.sprite.material.rotation = visual.moving ? Math.sin(runPosition * Math.PI / 3) * .012 : 0;
   visual.blendSprite.material.rotation = visual.sprite.material.rotation;
+  const actionFrames = attackActive && liuBeiAttackArtFrames.length
+    ? liuBeiAttackArtFrames
+    : visual.moving && liuBeiRunArtFrames.length ? liuBeiRunArtFrames : null;
+  if (actionFrames) {
+    const frameA = actionFrames[visual.facingFrameA ?? 0];
+    const frameB = actionFrames[visual.facingFrameB ?? 1];
+    if (visual.artFrameA !== frameA) {
+      visual.artFrameA = frameA;
+      visual.sprite.material.map = frameA;
+      visual.sprite.material.needsUpdate = true;
+    }
+    if (visual.artFrameB !== frameB) {
+      visual.artFrameB = frameB;
+      visual.blendSprite.material.map = frameB;
+      visual.blendSprite.material.needsUpdate = true;
+    }
+    visual.sprite.material.opacity = 1 - (visual.facingMix ?? 0);
+    visual.blendSprite.material.opacity = visual.facingMix ?? 0;
+  } else {
+    visual.artFrameA = null;
+    visual.artFrameB = null;
+  }
   const swing = visual.swingGroup;
   if (swing) {
     swing.visible = attackActive && attackAge > .085 && attackAge < .31;
