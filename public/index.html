@@ -17,6 +17,12 @@
         <div class="brand-mark" aria-hidden="true">
           <span class="brand-ring"></span><span class="brand-blade"></span><span class="brand-dot"></span>
         </div>
+        <div class="hero-choices" id="heroChoices" aria-label="選擇武將">
+          <button class="hero-choice" data-hero="liubei" aria-label="劉備" title="劉備"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 6v31M19 12h10M24 5l-4 7h8l-4-7M17 42l7-5 7 5M18 26h12"/></svg></button>
+          <button class="hero-choice" data-hero="caocao" aria-label="曹操" title="曹操"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 5v38M18 12h12M19 16l5-9 5 9M17 25h14M19 41l5-4 5 4"/></svg></button>
+          <button class="hero-choice" data-hero="sunquan" aria-label="孫權" title="孫權"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M11 37Q34 34 34 12M13 35l22-24M18 30l7 7M24 22l7 7M31 13l7-5-1 8"/></svg></button>
+          <button class="hero-choice" data-hero="lvbu" aria-label="呂布" title="呂布"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 4v40M19 11h10M18 15l6-10 6 10M14 22l10-6 10 6M18 38h12"/></svg></button>
+        </div>
         <div class="home-actions">
           <button class="round-button primary-action" id="quickJoin" aria-label="快速加入" title="快速加入">
             <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M27 4 11 26h11l-2 18 17-25H26l1-15Z"/></svg>
@@ -30,6 +36,7 @@
         </div>
         <div class="room-drawer" id="roomDrawer" aria-label="可加入的公開房間"></div>
         <div class="home-controls">
+          <button class="small-icon-button" id="soundToggle" aria-label="開啟音效" title="音效"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 12h6l7-6v20l-7-6H5zM23 12a6 6 0 0 1 0 8M25 8a11 11 0 0 1 0 16"/></svg></button>
           <button class="small-icon-button" id="fullscreen" aria-label="全螢幕" title="全螢幕">
             <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M12 4H4v8M20 4h8v8M4 20v8h8M28 20v8h-8"/></svg>
           </button>
@@ -42,6 +49,11 @@
         </button>
         <div class="room-status" id="roomStatus" aria-live="polite"></div>
         <div class="roster" id="roster"></div>
+        <div class="room-config" id="roomConfig" aria-label="房間設定">
+          <button class="config-button" id="mapSelect" aria-label="切換地圖" title="地圖"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="m4 10 10-5 12 5 10-5v25l-10 5-12-5-10 5V10ZM14 5v25m12-20v25M7 14h4M17 15l6 3M29 16l4-3"/></svg></button>
+          <button class="config-button" id="difficultySelect" aria-label="切換難度" title="難度"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 4 36 34H4L20 4ZM20 15v9m0 5v1"/></svg></button>
+          <button class="config-button" id="sizeSelect" aria-label="切換人數上限" title="人數"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="14" cy="13" r="5"/><circle cx="27" cy="14" r="4"/><path d="M4 33c0-7 4-11 10-11s10 4 10 11M24 24c6-3 12 1 12 8"/></svg></button>
+        </div>
         <div class="room-actions">
           <button class="round-button" id="inviteButton" aria-label="複製邀請連結" title="邀請">
             <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M19 29 29 19M16 32l-3 3a8 8 0 0 1-11-11l8-8a8 8 0 0 1 11 0M32 16l3-3a8 8 0 0 1 11 11l-8 8a8 8 0 0 1-11 0"/></svg>
@@ -60,20 +72,25 @@
           <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M20 6 10 16l10 10M11 16h17"/></svg>
         </button>
         <div class="game-topline">
-          <div class="time-pill" aria-label="剩餘時間"><span class="hourglass">◷</span><span id="timer">08:00</span></div>
+          <div class="time-pill" aria-label="剩餘時間"><span class="hourglass">◷</span><span id="timer">12:00</span></div>
           <div class="party-strip" id="partyStrip"></div>
           <button class="small-icon-button camera-toggle" id="cameraToggle" aria-label="切換視角" title="切換視角">
             <svg viewBox="0 0 32 32" aria-hidden="true"><path d="m4 12 12-7 12 7-12 7-12-7ZM4 20l12 7 12-7M9 15v7M23 15v7"/></svg>
           </button>
         </div>
-        <div class="team-health" aria-label="隊伍生命"><span class="heart-mark" aria-hidden="true">♥</span><div class="health-track"><i id="healthFill"></i></div></div>
+        <button class="small-icon-button game-sound" id="soundToggleHud" aria-label="開啟音效" title="音效"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 12h6l7-6v20l-7-6H5zM23 12a6 6 0 0 1 0 8M25 8a11 11 0 0 1 0 16"/></svg></button>
+        <button class="small-icon-button game-lock" id="gameLock" aria-label="鎖定房間" title="鎖定房間"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="14" width="22" height="15" rx="3"/><path d="M10 14V9a6 6 0 0 1 12 0v5M16 19v5"/></svg></button>
+        <div class="team-health" aria-label="角色生命"><span class="heart-mark" aria-hidden="true">♥</span><div class="health-track"><i id="healthFill"></i></div></div>
         <div class="level-track" aria-label="經驗值"><div id="xpFill"></div></div>
+        <div class="boss-health hidden" id="bossHealth" aria-label="首領生命"><i id="bossHealthFill"></i></div>
         <div class="skill-row" id="skillRow" aria-label="技能"></div>
         <button class="special-button" id="specialAbility" aria-label="範圍絕技，能量未滿" title="範圍絕技">
           <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M27 3 10 27h11l-2 18 19-27H26l1-15Z"/></svg>
         </button>
+        <div class="level-choice hidden" id="levelChoice" aria-label="選擇強化"><div class="level-choice-cards" id="levelChoiceCards"></div></div>
         <div class="touch-stick" id="touchStick" aria-label="移動控制"><span class="stick-knob"></span></div>
         <div class="combat-flash" id="combatFlash"></div>
+        <div class="revive-hint hidden" id="reviveHint" aria-label="等待隊友救援"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M9 25c6-8 11-8 15-3 4-5 9-5 15 3l-8 12H17L9 25ZM16 21l-5-8m21 8 5-8M20 34h8"/></svg></div>
       </section>
 
       <section id="result" class="screen result-screen hidden">
