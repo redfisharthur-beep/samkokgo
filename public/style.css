@@ -117,7 +117,8 @@ button { font: inherit; color: inherit; }
 .upgrade-card b.on { background: var(--gold); box-shadow: 0 0 0 2px rgba(194,165,111,.14); }
 .upgrade-card:hover, .upgrade-card:active { transform: translateY(-5px) scale(1.03); box-shadow: 0 19px 42px rgba(45,50,44,.24); }
 .level-choice.hidden { display: none !important; }
-.touch-stick { display: none; position: absolute; left: max(24px, env(safe-area-inset-left)); bottom: max(24px, env(safe-area-inset-bottom)); width: 116px; height: 116px; border: 1px solid rgba(74,84,77,.2); border-radius: 50%; background: rgba(223, 224, 212, .42); box-shadow: inset 0 2px 15px rgba(44,50,44,.08); pointer-events: auto; touch-action: none; }
+.touch-stick { display: block; position: fixed; z-index: 6; left: 0; top: 0; width: 116px; height: 116px; border: 1px solid rgba(74,84,77,.2); border-radius: 50%; background: rgba(223, 224, 212, .42); box-shadow: inset 0 2px 15px rgba(44,50,44,.08); opacity: 0; visibility: hidden; pointer-events: none; touch-action: none; transition: opacity .08s ease; will-change: left, top; }
+.touch-stick.active { opacity: 1; visibility: visible; }
 .stick-knob { position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; transform: translate(-50%,-50%); border: 1px solid rgba(67,79,70,.22); border-radius: 50%; background: rgba(239,235,226,.88); box-shadow: 0 4px 12px rgba(45,50,44,.12); }
 .combat-flash { position: absolute; inset: 0; pointer-events: none; border: 0 solid rgba(183,123,109,0); transition: border-width .12s ease; }
 .combat-flash.hit { border-width: 10px; border-color: rgba(183,123,109,.18); }
@@ -142,7 +143,6 @@ button { font: inherit; color: inherit; }
 @keyframes skill-ready { 50% { transform: scale(1.06); } }
 @keyframes revive-pulse { 50% { transform: scale(1.08); box-shadow: 0 0 0 15px rgba(194,165,111,.08); } }
 
-@media (pointer: coarse) and (orientation: landscape) { .touch-stick { display: block; } }
 @media (orientation: portrait) {
   .rotate-hint:not(.hidden) { display: grid !important; }
   .home-actions { top: 58%; gap: 18px; }
