@@ -473,9 +473,10 @@ function updateLiuBeiMotion(visual, now) {
   visual.blendSprite.scale.copy(visual.sprite.scale);
   visual.sprite.material.rotation = visual.moving ? Math.sin(runPosition * Math.PI / 3) * .012 : 0;
   visual.blendSprite.material.rotation = visual.sprite.material.rotation;
-  const actionFrames = attackActive && liuBeiAttackArtFrames.length
+  const isLegend = (appState.playerProgress[visual.playerId ?? appState.selfId]?.level ?? 1) >= 10;
+  const actionFrames = !isLegend && attackActive && liuBeiAttackArtFrames.length
     ? liuBeiAttackArtFrames
-    : visual.moving && liuBeiRunArtFrames.length ? liuBeiRunArtFrames : null;
+    : !isLegend && visual.moving && liuBeiRunArtFrames.length ? liuBeiRunArtFrames : null;
   if (actionFrames) {
     const frameA = actionFrames[visual.facingFrameA ?? 0];
     const frameB = actionFrames[visual.facingFrameB ?? 1];
