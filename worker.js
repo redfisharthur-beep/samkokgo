@@ -187,6 +187,17 @@ export class GameHub extends DurableObject {
       if (from && to) this.broadcast(room.id, { type: "attack-fx", from, to, heroId, playerId }, socket);
       return;
     }
+    if (message.type === "enemy-shot-fx" && attachment.playerId === room.hostId && room.status === "playing") {
+      const from = sanitizePoint(message.from);
+      const to = sanitizePoint(message.to);
+      const targetId = String(message.targetId ?? "").slice(0, 64);
+      const shotId = String(message.shotId ?? "").slice(0, 80);
+      const damage = clampNumber(message.damage, 1, 20);
+      if (from && to && targetId && shotId) {
+        this.broadcast(room.id, { type: "enemy-shot-fx", from, to, targetId, shotId, damage }, socket);
+      }
+      return;
+    }
     if (message.type === "ability" && room.status === "playing") {
       this.broadcast(room.id, {
         type: "ability",
