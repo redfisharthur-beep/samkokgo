@@ -147,6 +147,11 @@ export class GameHub extends DurableObject {
       this.broadcast(room.id, { type: "players", players: this.playerList(room.id) });
       return;
     }
+    if (message.type === "game-state" && attachment.playerId === room.hostId && room.status === "playing") {
+      const state = sanitizeGameState(message.state);
+      if (state) this.broadcast(room.id, { type: "game-state", state }, socket);
+      return;
+    }
     if (message.type === "lock" && attachment.playerId === room.hostId && room.status === "waiting") {
       room.locked = !room.locked;
       rooms[room.id] = room;
@@ -226,6 +231,20 @@ function tagFor(roomId) { return `room:${roomId}`; }
 function clampNumber(value, min, max) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : 0;
+}
+function sanitizeGameState(state) {
+  if (!state || !Array.isArray(state.enemies)) return null;
+  const enemies = state.enemies.slice(0, 36).map((enemy, index) => ({
+    id: String(enemy?.id ?? index).slice(0, 32),
+    x: clampNumber(enemy?.x, -WORLD_LIMIT, WORLD_LIMIT),
+    z: clampNumber(enemy?.z, -WORLD_DEPTH_LIMIT, WORLD_DEPTH_LIMIT),
+    hp: Math.round(clampNumber(enemy?.hp, 0, 99))
+  })).filter((enemy) => enemy.hp > 0);
+  return {
+    enemies,
+    xp: Math.round(clampNumber(state.xp, 0, 9999)),
+    level: Math.round(clampNumber(state.level, 1, 99))
+  };
 }
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
