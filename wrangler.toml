@@ -1,4 +1,4 @@
-name = "samkokgo-survivors"
+name = "samkokgo"
 main = "worker.js"
 compatibility_date = "2026-10-15"
 
