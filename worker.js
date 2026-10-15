@@ -182,7 +182,9 @@ export class GameHub extends DurableObject {
     if (message.type === "attack-fx" && attachment.playerId === room.hostId && room.status === "playing") {
       const from = sanitizePoint(message.from);
       const to = sanitizePoint(message.to);
-      if (from && to) this.broadcast(room.id, { type: "attack-fx", from, to }, socket);
+      const heroId = ["liubei", "caocao", "sunquan", "lvbu"].includes(message.heroId) ? message.heroId : "liubei";
+      const playerId = String(message.playerId ?? attachment.playerId).slice(0, 64);
+      if (from && to) this.broadcast(room.id, { type: "attack-fx", from, to, heroId, playerId }, socket);
       return;
     }
     if (message.type === "ability" && room.status === "playing") {
