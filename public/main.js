@@ -42,7 +42,7 @@ const appState = {
   mapId: "forest", difficulty: "normal",
   players: new Map(), socket: null, cameraMode: 0, startedAt: null,
   secondsLeft: ROUND_SECONDS, xp: 0, level: 1, muted: false, lastInput: 0,
-  pointer: null, move: { x: 0, z: 0 }, enemies: [], pickups: [], projectiles: [],
+  pointer: null, move: { x: 0, z: 0 }, moveCurrent: { x: 0, z: 0 }, enemies: [], pickups: [], projectiles: [],
   nextSpawn: 0, nextAttack: 0, lastGameSync: 0, enemySequence: 0,
   nextPlayerAttacks: new Map(), energy: 0, abilityPending: false,
   nextTeamHit: 0, bursts: [], toastTimer: 0, pickupSequence: 0,
@@ -1006,10 +1006,15 @@ function updateCamera() {
 
 function updateMovement(delta) {
   const keys = appState.keys ?? {};
-  let x = appState.move.x || ((keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0));
-  let z = appState.move.z || ((keys.ArrowDown || keys.KeyS ? 1 : 0) - (keys.ArrowUp || keys.KeyW ? 1 : 0));
+  let targetX = appState.move.x || ((keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0));
+  let targetZ = appState.move.z || ((keys.ArrowDown || keys.KeyS ? 1 : 0) - (keys.ArrowUp || keys.KeyW ? 1 : 0));
   const ownVital = appState.playerVitals[appState.selfId];
-  if (ownVital?.downed || ownVital?.eliminated) { x = 0; z = 0; }
+  if (ownVital?.downed || ownVital?.eliminated) { targetX = 0; targetZ = 0; }
+  const smoothing = 1 - Math.exp(-Math.min(delta, .05) * (Math.hypot(targetX, targetZ) > .08 ? 22 : 26));
+  appState.moveCurrent.x += (targetX - appState.moveCurrent.x) * smoothing;
+  appState.moveCurrent.z += (targetZ - appState.moveCurrent.z) * smoothing;
+  let x = appState.moveCurrent.x;
+  let z = appState.moveCurrent.z;
   const length = Math.hypot(x, z);
   localPlayer.moving = length > .08;
   if (length > 1) { x /= length; z /= length; }
@@ -1313,23 +1318,46 @@ function installControls() {
   });
   window.addEventListener("keyup", (event) => { if (appState.keys) appState.keys[event.code] = false; });
   const stick = ui.stick;
+  const knob = stick.querySelector(".stick-knob");
+  let stickOrigin = null;
+  let stickRadius = 48;
   const setStick = (event) => {
-    const rect = stick.getBoundingClientRect();
-    const radius = rect.width * .34;
-    const dx = event.clientX - (rect.left + rect.width / 2);
-    const dy = event.clientY - (rect.top + rect.height / 2);
-    const length = Math.min(1, Math.hypot(dx, dy) / radius);
-    const angle = Math.atan2(dy, dx);
-    const x = Math.cos(angle) * length;
-    const y = Math.sin(angle) * length;
-    appState.move = { x, z: y };
-    stick.querySelector(".stick-knob").style.transform = `translate(calc(-50% + ${x * radius}px), calc(-50% + ${y * radius}px))`;
+    if (!stickOrigin) return;
+    const dx = event.clientX - stickOrigin.x;
+    const dy = event.clientY - stickOrigin.y;
+    const distance = Math.hypot(dx, dy);
+    const deadzone = 7;
+    const amount = Math.min(1, Math.max(0, (distance - deadzone) / (stickRadius - deadzone)));
+    const directionX = distance ? dx / distance : 0;
+    const directionY = distance ? dy / distance : 0;
+    appState.move = { x: directionX * amount, z: directionY * amount };
+    const knobDistance = Math.min(distance, stickRadius);
+    knob.style.transform = `translate(calc(-50% + ${directionX * knobDistance}px), calc(-50% + ${directionY * knobDistance}px))`;
   };
-  stick.addEventListener("pointerdown", (event) => { appState.pointer = event.pointerId; stick.setPointerCapture(event.pointerId); setStick(event); });
-  stick.addEventListener("pointermove", (event) => { if (appState.pointer === event.pointerId) setStick(event); });
-  const resetStick = () => { appState.pointer = null; appState.move = { x: 0, z: 0 }; stick.querySelector(".stick-knob").style.transform = "translate(-50%,-50%)"; };
-  stick.addEventListener("pointerup", resetStick);
-  stick.addEventListener("pointercancel", resetStick);
+  const resetStick = (event) => {
+    if (appState.pointer !== event.pointerId) return;
+    appState.pointer = null;
+    stickOrigin = null;
+    appState.move = { x: 0, z: 0 };
+    stick.classList.remove("active");
+    knob.style.transform = "translate(-50%,-50%)";
+  };
+  document.addEventListener("pointerdown", (event) => {
+    if (appState.screen !== "game" || appState.pointer !== null || event.button > 0) return;
+    if (event.target.closest("button, a, input, select, textarea, .level-choice, .rotate-hint")) return;
+    const rect = stick.getBoundingClientRect();
+    stickRadius = Math.max(32, rect.width * .43);
+    stickOrigin = { x: event.clientX, y: event.clientY };
+    appState.pointer = event.pointerId;
+    stick.style.left = `${clamp(event.clientX - rect.width / 2, 4, window.innerWidth - rect.width - 4)}px`;
+    stick.style.top = `${clamp(event.clientY - rect.height / 2, 4, window.innerHeight - rect.height - 4)}px`;
+    stick.classList.add("active");
+    knob.style.transform = "translate(-50%,-50%)";
+    event.preventDefault();
+  }, { passive: false });
+  window.addEventListener("pointermove", (event) => { if (appState.pointer === event.pointerId) setStick(event); });
+  window.addEventListener("pointerup", resetStick);
+  window.addEventListener("pointercancel", resetStick);
 
   $("quickJoin").addEventListener("click", quickJoin);
   ui.heroChoices.querySelectorAll("[data-hero]").forEach((button) => button.addEventListener("click", () => setHero(button.dataset.hero)));
