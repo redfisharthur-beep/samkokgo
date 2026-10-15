@@ -66,8 +66,12 @@
             <svg viewBox="0 0 32 32" aria-hidden="true"><path d="m4 12 12-7 12 7-12 7-12-7ZM4 20l12 7 12-7M9 15v7M23 15v7"/></svg>
           </button>
         </div>
+        <div class="team-health" aria-label="隊伍生命"><span class="heart-mark" aria-hidden="true">♥</span><div class="health-track"><i id="healthFill"></i></div></div>
         <div class="level-track" aria-label="經驗值"><div id="xpFill"></div></div>
         <div class="skill-row" id="skillRow" aria-label="技能"></div>
+        <button class="special-button" id="specialAbility" aria-label="範圍絕技，能量未滿" title="範圍絕技">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M27 3 10 27h11l-2 18 19-27H26l1-15Z"/></svg>
+        </button>
         <div class="touch-stick" id="touchStick" aria-label="移動控制"><span class="stick-knob"></span></div>
         <div class="combat-flash" id="combatFlash"></div>
       </section>
