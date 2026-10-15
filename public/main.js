@@ -89,6 +89,15 @@ floor.receiveShadow = true;
 world.add(floor);
 buildMapDecor();
 
+const liuBeiTextureLoader = new THREE.TextureLoader();
+const liuBeiTextures = Object.fromEntries(["front", "right", "back", "left"].map((view) => {
+  const texture = liuBeiTextureLoader.load(`/assets/characters/liubei/${view}.svg`);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  return [view, texture];
+}));
+
 let localPlayer = makeWarrior(HEROES[appState.heroId]?.color ?? COLORS[0], true, appState.heroId);
 localPlayer.group.position.set(0, 0, 0);
 world.add(localPlayer.group);
@@ -182,6 +191,7 @@ function makeTree(leafColor, trunkColor) {
 }
 
 function makeWarrior(color, hero = false, heroId = "liubei") {
+  if (hero && heroId === "liubei") return makeLiuBeiSprite(color);
   const group = new THREE.Group();
   const armor = new THREE.MeshStandardMaterial({ color, roughness: .83, metalness: .04 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x555c54, roughness: .95 });
@@ -247,6 +257,52 @@ function makeWarrior(color, hero = false, heroId = "liubei") {
   group.add(shadow);
   if (hero && heroId === "lvbu") group.scale.setScalar(1.12);
   return { group, body, weapon, color, heroId };
+}
+
+function makeLiuBeiSprite(color) {
+  const group = new THREE.Group();
+  const material = new THREE.SpriteMaterial({
+    map: liuBeiTextures.front,
+    color: 0xffffff,
+    transparent: true,
+    alphaTest: .08,
+    depthWrite: false,
+    toneMapped: false
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.position.y = 1.72;
+  sprite.scale.set(2.85, 3.42, 1);
+  sprite.renderOrder = 2;
+  group.add(sprite);
+  const shadow = new THREE.Mesh(new THREE.CircleGeometry(.78, 28), new THREE.MeshBasicMaterial({ color: 0x455047, transparent: true, opacity: .2, depthWrite: false }));
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.y = .035;
+  group.add(shadow);
+  return { group, body: sprite, sprite, spriteView: "front", weapon: new THREE.Group(), color, heroId: "liubei", moving: false, attackAt: -Infinity };
+}
+
+function updateLiuBeiFacing(visual) {
+  if (!visual?.sprite || !camera) return;
+  const toCamera = Math.atan2(camera.position.x - visual.group.position.x, camera.position.z - visual.group.position.z);
+  let relative = visual.group.rotation.y - toCamera;
+  while (relative > Math.PI) relative -= Math.PI * 2;
+  while (relative < -Math.PI) relative += Math.PI * 2;
+  const angle = Math.abs(relative);
+  const view = angle < Math.PI / 4 ? "front" : angle < Math.PI * 3 / 4 ? (relative > 0 ? "right" : "left") : "back";
+  if (visual.spriteView !== view) {
+    visual.spriteView = view;
+    visual.sprite.material.map = liuBeiTextures[view];
+    visual.sprite.material.needsUpdate = true;
+  }
+}
+
+function updateLiuBeiMotion(visual, now) {
+  if (!visual?.sprite) return;
+  const runBob = visual.moving ? Math.abs(Math.sin(now * .018)) * .075 : Math.sin(now * .002) * .018;
+  const attackAge = (now - visual.attackAt) / 1000;
+  const attacking = attackAge >= 0 && attackAge < .16;
+  visual.sprite.position.y = 1.72 + runBob;
+  visual.sprite.scale.set(attacking ? 3.05 : 2.85, attacking ? 3.27 : 3.42, 1);
 }
 
 function setHero(heroId) {
@@ -343,12 +399,36 @@ function createEnemy(position = null, id = null, hp = 2, elite = false, kind = e
   return enemy;
 }
 
-function makeProjectile(from, to) {
-  const material = new THREE.MeshBasicMaterial({ color: 0xc8a96f, transparent: true, opacity: .92 });
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(.13, 8, 8), material);
+function makeProjectile(from, to, heroId = "liubei") {
+  const colors = { liubei: 0x9caa83, caocao: 0xb49b6e, sunquan: 0x8097a0, lvbu: 0xb67b6d };
+  const material = new THREE.MeshBasicMaterial({ color: colors[heroId] ?? 0xc8a96f, transparent: true, opacity: .94, depthWrite: false });
+  let mesh;
+  if (heroId === "liubei") {
+    mesh = new THREE.Mesh(new THREE.TorusGeometry(.22, .055, 5, 14, Math.PI * 1.45), material);
+    mesh.scale.set(.9, 1.2, 1);
+  } else if (heroId === "caocao") {
+    mesh = new THREE.Mesh(new THREE.BoxGeometry(.1, .66, .08), material);
+  } else if (heroId === "sunquan") {
+    mesh = new THREE.Mesh(new THREE.ConeGeometry(.11, .54, 5), material);
+    mesh.rotation.x = Math.PI / 2;
+  } else {
+    mesh = new THREE.Mesh(new THREE.OctahedronGeometry(.2, 0), material);
+    mesh.scale.set(.8, 1.6, .8);
+  }
   mesh.position.set(from.x, 1.45, from.z);
+  mesh.rotation.y = Math.atan2(to.x - from.x, to.z - from.z);
   projectileGroup.add(mesh);
-  appState.projectiles.push({ mesh, from: mesh.position.clone(), to: new THREE.Vector3(to.x, 1.25, to.z), progress: 0, target: to });
+  appState.projectiles.push({ mesh, from: mesh.position.clone(), to: new THREE.Vector3(to.x, 1.25, to.z), progress: 0, heroId });
+}
+
+function showHitBurst(x, z, heroId = "liubei") {
+  const colors = { liubei: 0x9caa83, caocao: 0xb49b6e, sunquan: 0x8097a0, lvbu: 0xb67b6d };
+  const ring = new THREE.Mesh(new THREE.RingGeometry(.18, .48, 22), new THREE.MeshBasicMaterial({ color: colors[heroId] ?? 0xc8a96f, transparent: true, opacity: .88, side: THREE.DoubleSide, depthWrite: false }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(x, .18, z);
+  ring.scale.setScalar(.2);
+  world.add(ring);
+  appState.bursts.push({ mesh: ring, age: 0, duration: .24, scaleTo: 2.4 });
 }
 
 function createPickup(position, id = null, type = "energy") {
@@ -378,13 +458,16 @@ function removePickup(pickup) {
   pickup.ring.material.dispose();
 }
 
-function showAbilityBurst(x, z) {
-  const ring = new THREE.Mesh(new THREE.RingGeometry(.82, 1, 36), new THREE.MeshBasicMaterial({ color: 0xd3b878, transparent: true, opacity: .82, side: THREE.DoubleSide, depthWrite: false }));
+function showAbilityBurst(x, z, heroId = "liubei") {
+  const colors = { liubei: 0x9caa83, caocao: 0xb49b6e, sunquan: 0x8097a0, lvbu: 0xb67b6d };
+  const segments = { liubei: 36, caocao: 4, sunquan: 7, lvbu: 12 }[heroId] ?? 36;
+  const inner = heroId === "lvbu" ? .52 : .82;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(inner, 1, segments), new THREE.MeshBasicMaterial({ color: colors[heroId] ?? 0xd3b878, transparent: true, opacity: .86, side: THREE.DoubleSide, depthWrite: false }));
   ring.rotation.x = -Math.PI / 2;
   ring.position.set(x, .12, z);
   ring.scale.setScalar(.1);
   world.add(ring);
-  appState.bursts.push({ mesh: ring, age: 0 });
+  appState.bursts.push({ mesh: ring, age: 0, duration: .62, scaleTo: heroId === "lvbu" ? 9 : heroId === "liubei" ? 13 : 11 });
 }
 
 function awardKill(enemy, killerId = appState.selfId) {
@@ -411,6 +494,8 @@ function activateAbility(playerId, x, z) {
   const progress = ensureProgress(playerId);
   const radius = hero.role === "ranged" ? 15 : hero.role === "vanguard" ? 10 : 12;
   const damage = (hero.role === "vanguard" ? 4 : hero.role === "support" ? 1 : 3) + progress.upgrades.power;
+  const attackerVisual = playerId === appState.selfId ? localPlayer : playerVisuals.get(playerId);
+  const facing = attackerVisual?.group.rotation.y ?? 0;
   if (hero.role === "support") {
     for (const [id, vital] of Object.entries(appState.playerVitals)) {
       if (vital.eliminated) continue;
@@ -421,8 +506,23 @@ function activateAbility(playerId, x, z) {
     }
   }
   for (const enemy of appState.enemies) {
-    if (Math.hypot(enemy.group.position.x - x, enemy.group.position.z - z) > radius) continue;
+    const dx = enemy.group.position.x - x;
+    const dz = enemy.group.position.z - z;
+    const distance = Math.hypot(dx, dz);
+    if (distance > radius) continue;
+    if (heroId === "sunquan") {
+      const angle = Math.atan2(dx, dz) - facing;
+      const wrapped = Math.atan2(Math.sin(angle), Math.cos(angle));
+      if (Math.abs(wrapped) > .62) continue;
+    }
     enemy.group.userData.hp -= damage;
+    if (heroId === "caocao") enemy.group.userData.stunUntil = Date.now() + 750;
+    if (heroId === "caocao" || heroId === "lvbu") {
+      const push = heroId === "lvbu" ? 2.6 : 1.7;
+      const length = Math.max(distance, .01);
+      enemy.group.position.x = clamp(enemy.group.position.x + dx / length * push, -WORLD.x + 2, WORLD.x - 2);
+      enemy.group.position.z = clamp(enemy.group.position.z + dz / length * push, -WORLD.z + 2, WORLD.z - 2);
+    }
     if (enemy.group.userData.hp <= 0) awardKill(enemy, playerId);
   }
   appState.enemies = appState.enemies.filter((enemy) => enemy.group.userData.alive);
@@ -475,7 +575,7 @@ function playTone(frequency, duration = .16, type = "sine", volume = .035) {
 
 function playSound(kind) {
   const patterns = {
-    attack: [[420,.08,"triangle",.012]], hit: [[150,.18,"sawtooth",.022]], kill: [[520,.09,"sine",.018]],
+    attack: [[170,.075,"sawtooth",.025],[510,.11,"triangle",.02]], hit: [[115,.13,"square",.032],[240,.08,"sawtooth",.018]], kill: [[520,.09,"sine",.018]],
     skill: [[330,.2,"triangle",.04],[495,.28,"sine",.03]], level: [[392,.13,"sine",.03],[523,.18,"sine",.026]],
     revive: [[440,.2,"sine",.03],[587,.25,"sine",.025]], boss: [[110,.35,"triangle",.04],[146,.5,"sawtooth",.025]],
     win: [[523,.3,"sine",.03],[659,.4,"sine",.03]], loss: [[220,.4,"triangle",.025],[165,.55,"triangle",.02]]
@@ -592,9 +692,14 @@ function handleSocketMessage(event) {
   if (message.type === "presence") applySnapshot(message.snapshot);
   if (message.type === "players") setPlayers(message.players);
   if (message.type === "game-state") applyGameState(message.state);
-  if (message.type === "attack-fx" && message.from && message.to) makeProjectile(message.from, message.to);
+  if (message.type === "attack-fx" && message.from && message.to) {
+    makeProjectile(message.from, message.to, message.heroId);
+    const attacker = message.playerId === appState.selfId ? localPlayer : playerVisuals.get(message.playerId);
+    if (attacker) attacker.attackAt = performance.now();
+  }
   if (message.type === "ability") {
-    showAbilityBurst(message.x, message.z);
+    const heroId = appState.players.get(message.playerId)?.heroId ?? "liubei";
+    showAbilityBurst(message.x, message.z, heroId);
     if (appState.host) activateAbility(message.playerId, message.x, message.z);
   }
   if (message.type === "level-choice" && appState.host) applyLevelChoice(message.playerId, message.upgradeId);
@@ -906,6 +1011,7 @@ function updateMovement(delta) {
   const ownVital = appState.playerVitals[appState.selfId];
   if (ownVital?.downed || ownVital?.eliminated) { x = 0; z = 0; }
   const length = Math.hypot(x, z);
+  localPlayer.moving = length > .08;
   if (length > 1) { x /= length; z /= length; }
   const speed = (HEROES[appState.heroId]?.speed ?? 11) + (appState.playerProgress[appState.selfId]?.upgrades?.speed ?? 0);
   localPlayer.group.position.x = clamp(localPlayer.group.position.x + x * speed * delta, -WORLD.x + 2, WORLD.x - 2);
@@ -921,15 +1027,20 @@ function updateRemotePlayers(delta) {
   for (const [id, visual] of playerVisuals) {
     const player = appState.players.get(id);
     if (!player) continue;
-    visual.group.position.lerp(visual.target ?? new THREE.Vector3(player.x, 0, player.z), Math.min(1, delta * 8));
+    const target = visual.target ?? new THREE.Vector3(player.x, 0, player.z);
+    const dx = target.x - visual.group.position.x;
+    const dz = target.z - visual.group.position.z;
+    visual.moving = Math.hypot(dx, dz) > .04;
+    if (visual.moving) visual.group.rotation.y = Math.atan2(dx, dz);
+    visual.group.position.lerp(target, Math.min(1, delta * 8));
   }
 }
 
 function updateAbilityBursts(delta) {
   appState.bursts = appState.bursts.filter((burst) => {
     burst.age += delta;
-    const progress = Math.min(1, burst.age / .62);
-    burst.mesh.scale.setScalar(.1 + progress * 13);
+    const progress = Math.min(1, burst.age / (burst.duration ?? .62));
+    burst.mesh.scale.setScalar(.1 + progress * ((burst.scaleTo ?? 13) - .1));
     burst.mesh.material.opacity = .82 * (1 - progress);
     if (progress < 1) return true;
     world.remove(burst.mesh);
@@ -979,6 +1090,8 @@ function updateCombat(now, delta) {
     for (const enemy of appState.enemies) {
       const data = enemy.group.userData;
       if (!data.alive) continue;
+      if ((data.stunUntil ?? 0) > Date.now()) continue;
+      if ((data.hitUntil ?? 0) > now) continue;
       if (!activeParty.length) break;
       let target = activeParty[0];
       let distance = Infinity;
@@ -1044,15 +1157,26 @@ function updateCombat(now, delta) {
       const target = nearestEnemy(player.position);
       if (target && target.group.position.distanceTo(player.position) < hero.range + progress.upgrades.reach * 2) {
         if (player.id === appState.selfId) playSound("attack");
-        makeProjectile(player.position, target.group.position);
+        makeProjectile(player.position, target.group.position, heroId);
+        const attackerVisual = player.id === appState.selfId ? localPlayer : playerVisuals.get(player.id);
+        if (attackerVisual) attackerVisual.attackAt = now;
         if (appState.socket?.readyState === WebSocket.OPEN) {
           appState.socket.send(JSON.stringify({
             type: "attack-fx",
             from: { x: player.position.x, z: player.position.z },
-            to: { x: target.group.position.x, z: target.group.position.z }
+            to: { x: target.group.position.x, z: target.group.position.z },
+            heroId,
+            playerId: player.id
           }));
         }
         target.group.userData.hp -= hero.damage + progress.upgrades.power;
+        target.group.userData.hitUntil = now + 85;
+        const hitX = target.group.position.x - player.position.x;
+        const hitZ = target.group.position.z - player.position.z;
+        const hitDistance = Math.max(.01, Math.hypot(hitX, hitZ));
+        const knockback = heroId === "lvbu" ? .7 : .28;
+        target.group.position.x = clamp(target.group.position.x + hitX / hitDistance * knockback, -WORLD.x + 2, WORLD.x - 2);
+        target.group.position.z = clamp(target.group.position.z + hitZ / hitDistance * knockback, -WORLD.z + 2, WORLD.z - 2);
         if (target.group.userData.hp <= 0) awardKill(target, player.id);
         appState.nextPlayerAttacks.set(player.id, now + hero.cadence * Math.pow(.9, progress.upgrades.tempo));
       } else appState.nextPlayerAttacks.set(player.id, now + 160);
@@ -1117,12 +1241,16 @@ function updateCombat(now, delta) {
     if (vitals.length && vitals.every((vital) => vital.downed || vital.eliminated)) finishRun(false);
   }
   for (const projectile of appState.projectiles) {
-    projectile.progress += delta * 3.4;
+    projectile.progress += delta * 4.2;
     projectile.mesh.position.lerpVectors(projectile.from, projectile.to, Math.min(projectile.progress, 1));
+    projectile.mesh.rotation.z += delta * 3.4;
   }
   appState.projectiles = appState.projectiles.filter((projectile) => {
     if (projectile.progress < 1) return true;
+    showHitBurst(projectile.to.x, projectile.to.z, projectile.heroId);
     projectileGroup.remove(projectile.mesh);
+    projectile.mesh.geometry.dispose();
+    projectile.mesh.material.dispose();
     return false;
   });
   if (appState.startedAt) {
@@ -1162,6 +1290,12 @@ function animate() {
     localPlayer.group.rotation.y += delta * .08;
   }
   updateCamera();
+  updateLiuBeiFacing(localPlayer);
+  updateLiuBeiMotion(localPlayer, now);
+  for (const visual of playerVisuals.values()) {
+    updateLiuBeiFacing(visual);
+    updateLiuBeiMotion(visual, now);
+  }
   renderer.render(scene, camera);
 }
 
