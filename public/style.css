@@ -98,20 +98,22 @@ button { font: inherit; color: inherit; }
 .boss-health { position: absolute; top: max(104px, calc(env(safe-area-inset-top) + 100px)); left: 50%; width: min(340px, 48vw); height: 8px; transform: translateX(-50%); overflow: hidden; border: 1px solid rgba(73,72,65,.24); border-radius: 9px; background: rgba(239,235,226,.72); box-shadow: 0 4px 12px rgba(48,48,42,.1); }
 .boss-health i { display: block; width: 100%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #9a665d, #c18e79); transition: width .18s ease; }
 .skill-row { position: absolute; right: max(18px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); display: flex; gap: 7px; }
-.skill-token { width: 42px; height: 42px; border: 1px solid rgba(80,91,83,.25); border-radius: 14px; background: rgba(231, 227, 216, .8); box-shadow: 0 5px 14px rgba(50,52,45,.08); position: relative; }
-.skill-token::before { content: ""; position: absolute; left: 50%; top: 50%; width: 13px; height: 13px; transform: translate(-50%,-50%) rotate(45deg); border: 2px solid var(--skill-color, #b77b6d); border-radius: 3px; }
-.skill-token:nth-child(2)::before { border-radius: 50%; border-color: #82918b; }
-.skill-token:nth-child(3)::before { width: 0; height: 0; border: 8px solid transparent; border-bottom-color: #b99e6f; transform: translate(-50%,-62%); }
+.skill-token { display: grid; place-items: center; width: 46px; height: 46px; border: 1px solid rgba(80,91,83,.25); border-radius: 9px; background: rgba(231, 227, 216, .9); box-shadow: 0 5px 14px rgba(50,52,45,.08); position: relative; image-rendering: pixelated; }
+.pixel-icon { display: block; width: 34px; height: 34px; image-rendering: pixelated; image-rendering: crisp-edges; }
+.skill-token:not(.unlocked) .pixel-icon { filter: saturate(.42) brightness(.88); opacity: .78; }
+.skill-token b { position: absolute; right: -4px; bottom: -4px; min-width: 16px; height: 16px; padding: 0 3px; border: 1px solid rgba(74,77,67,.26); border-radius: 5px; color: #f4eee0; background: #718078; font-size: 10px; line-height: 14px; text-align: center; }
+.skill-token:not(.unlocked) b { display: none; }
 .special-button { --charge: 0%; position: absolute; right: max(22px, env(safe-area-inset-right)); bottom: max(78px, calc(env(safe-area-inset-bottom) + 72px)); display: grid; place-items: center; width: 62px; height: 62px; padding: 4px; border: 1px solid rgba(68,77,70,.22); border-radius: 50%; color: #f1ede2; background: conic-gradient(var(--gold) var(--charge), rgba(239,235,226,.68) var(--charge)); box-shadow: 0 8px 22px rgba(50,52,45,.17); pointer-events: auto; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; }
 .special-button::before { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--moss); box-shadow: inset 0 1px 4px rgba(30,38,32,.22); }
 .special-button svg { position: relative; z-index: 1; width: 27px; height: 27px; fill: none; stroke: currentColor; stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round; }
+.special-button .special-pixel-icon { position: relative; z-index: 1; width: 38px; height: 38px; image-rendering: pixelated; image-rendering: crisp-edges; }
 .special-button:disabled { cursor: default; filter: saturate(.55); }
 .special-button.ready { box-shadow: 0 0 0 5px rgba(194,165,111,.2), 0 9px 25px rgba(50,52,45,.22); animation: skill-ready 1.4s ease-in-out infinite; }
 .special-button:active:not(:disabled) { transform: scale(.92); }
 .level-choice { position: absolute; z-index: 10; inset: 0; display: grid; place-items: center; background: rgba(67,74,68,.18); backdrop-filter: blur(3px); pointer-events: auto; }
 .level-choice-cards { display: flex; justify-content: center; gap: clamp(10px, 2vw, 22px); width: min(92vw, 520px); }
-.upgrade-card { display: grid; place-items: center; width: clamp(76px, 14vw, 116px); aspect-ratio: .88; border: 1px solid rgba(70,82,73,.22); border-radius: 22px; color: var(--moss-deep); background: rgba(239,235,226,.94); box-shadow: 0 14px 34px rgba(45,50,44,.18); cursor: pointer; transition: transform .16s ease, box-shadow .16s ease; }
-.upgrade-card svg { width: 43%; height: 43%; fill: none; stroke: currentColor; stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round; }
+.upgrade-card { display: grid; place-items: center; width: clamp(76px, 14vw, 116px); aspect-ratio: .88; border: 1px solid rgba(70,82,73,.22); border-radius: 12px; color: var(--moss-deep); background: rgba(239,235,226,.94); box-shadow: 0 14px 34px rgba(45,50,44,.18); cursor: pointer; transition: transform .16s ease, box-shadow .16s ease; }
+.upgrade-card .upgrade-pixel-icon { width: clamp(44px, 7vw, 64px); height: clamp(44px, 7vw, 64px); image-rendering: pixelated; }
 .upgrade-card i { display: flex; gap: 4px; margin-top: 8px; }
 .upgrade-card b { width: 5px; height: 5px; border-radius: 50%; background: rgba(80,90,82,.18); }
 .upgrade-card b.on { background: var(--gold); box-shadow: 0 0 0 2px rgba(194,165,111,.14); }
