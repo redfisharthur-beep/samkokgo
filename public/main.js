@@ -8,7 +8,8 @@ const ui = {
   home: $("home"), room: $("room"), hud: $("gameHud"), result: $("result"),
   roomDrawer: $("roomDrawer"), roster: $("roster"), partyStrip: $("partyStrip"),
   timer: $("timer"), xpFill: $("xpFill"), toast: $("toast"), stick: $("touchStick"),
-  rotateHint: $("rotateHint"), resultSeal: $("resultSeal"), skillRow: $("skillRow")
+  rotateHint: $("rotateHint"), resultSeal: $("resultSeal"), skillRow: $("skillRow"),
+  healthFill: $("healthFill"), specialAbility: $("specialAbility")
 };
 
 const appState = {
@@ -17,7 +18,8 @@ const appState = {
   secondsLeft: ROUND_SECONDS, xp: 0, level: 1, muted: false, lastInput: 0,
   pointer: null, move: { x: 0, z: 0 }, enemies: [], projectiles: [],
   nextSpawn: 0, nextAttack: 0, lastGameSync: 0, enemySequence: 0,
-  nextPlayerAttacks: new Map(), toastTimer: 0
+  nextPlayerAttacks: new Map(), teamHealth: 100, energy: 0, abilityPending: false,
+  nextTeamHit: 0, bursts: [], toastTimer: 0
 };
 
 const renderer = new THREE.WebGLRenderer({ canvas: $("world"), antialias: true, alpha: false, powerPreference: "low-power" });
@@ -165,10 +167,10 @@ function makeWarrior(color, hero = false) {
   return { group, body, weapon, color };
 }
 
-function createEnemy(position = null, id = null, hp = 2) {
-  const enemy = makeWarrior(0x9c6b65, false);
-  enemy.group.scale.setScalar(.78);
-  enemy.group.userData = { id: id ?? `enemy-${++appState.enemySequence}`, hp, speed: 2.3 + Math.random() * .9, alive: true, hitAt: 0 };
+function createEnemy(position = null, id = null, hp = 2, elite = false) {
+  const enemy = makeWarrior(elite ? 0x817e72 : 0x9c6b65, false);
+  enemy.group.scale.setScalar(elite ? 1 : .78);
+  enemy.group.userData = { id: id ?? `enemy-${++appState.enemySequence}`, hp, elite, speed: (elite ? 2.65 : 2.3) + Math.random() * .9, alive: true, hitAt: 0 };
   enemyGroup.add(enemy.group);
   if (position) enemy.group.position.set(position.x, 0, position.z);
   else {
@@ -193,6 +195,50 @@ function makeProjectile(from, to) {
   mesh.position.set(from.x, 1.45, from.z);
   projectileGroup.add(mesh);
   appState.projectiles.push({ mesh, from: mesh.position.clone(), to: new THREE.Vector3(to.x, 1.25, to.z), progress: 0, target: to });
+}
+
+function showAbilityBurst(x, z) {
+  const ring = new THREE.Mesh(new THREE.RingGeometry(.82, 1, 36), new THREE.MeshBasicMaterial({ color: 0xd3b878, transparent: true, opacity: .82, side: THREE.DoubleSide, depthWrite: false }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(x, .12, z);
+  ring.scale.setScalar(.1);
+  world.add(ring);
+  appState.bursts.push({ mesh: ring, age: 0 });
+}
+
+function awardKill(enemy) {
+  enemy.group.userData.alive = false;
+  enemyGroup.remove(enemy.group);
+  appState.xp += enemy.group.userData.elite ? 2 : 1;
+  appState.energy = Math.min(100, appState.energy + (enemy.group.userData.elite ? 22 : 12));
+  if (appState.xp >= 7 + appState.level * 2) {
+    appState.xp = 0;
+    appState.level += 1;
+    ui.xpFill.style.width = `${Math.min(100, 12 + appState.level * 5)}%`;
+    addSkillToken();
+  }
+}
+
+function activateAbility(playerId, x, z) {
+  if (!appState.host || appState.energy < 100 || appState.screen !== "game") return;
+  appState.energy = 0;
+  appState.abilityPending = false;
+  for (const enemy of appState.enemies) {
+    if (Math.hypot(enemy.group.position.x - x, enemy.group.position.z - z) > 12) continue;
+    enemy.group.userData.hp -= 2;
+    if (enemy.group.userData.hp <= 0) awardKill(enemy);
+  }
+  appState.enemies = appState.enemies.filter((enemy) => enemy.group.userData.alive);
+  renderVitals();
+}
+
+function renderVitals() {
+  ui.healthFill.style.width = `${appState.teamHealth}%`;
+  ui.specialAbility.style.setProperty("--charge", `${appState.energy}%`);
+  const ready = appState.energy >= 100;
+  ui.specialAbility.disabled = !ready || appState.abilityPending || appState.socket?.readyState !== WebSocket.OPEN;
+  ui.specialAbility.classList.toggle("ready", ready && !appState.abilityPending);
+  ui.specialAbility.setAttribute("aria-label", ready ? "範圍絕技，能量已滿" : "範圍絕技，能量未滿");
 }
 
 function nearestEnemy(position = localPlayer.group.position) {
@@ -240,10 +286,13 @@ async function joinRoom(roomId) {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const socket = new WebSocket(`${protocol}//${location.host}/ws?room=${encodeURIComponent(roomId)}`);
     appState.socket = socket;
+    renderVitals();
     socket.addEventListener("message", handleSocketMessage);
+    socket.addEventListener("open", renderVitals);
     socket.addEventListener("close", () => {
       if (appState.socket === socket && appState.roomId) {
         appState.socket = null;
+        renderVitals();
         showToast("連線已中斷");
         setTimeout(() => { if (appState.screen === "room" || appState.screen === "game") returnHome(); }, 1600);
       }
@@ -263,6 +312,10 @@ function handleSocketMessage(event) {
   if (message.type === "presence") applySnapshot(message.snapshot);
   if (message.type === "players") setPlayers(message.players);
   if (message.type === "game-state") applyGameState(message.state);
+  if (message.type === "ability") {
+    showAbilityBurst(message.x, message.z);
+    if (appState.host) activateAbility(message.playerId, message.x, message.z);
+  }
   if (message.type === "room") {
     appState.room = message.room;
     appState.host = appState.room?.hostId === appState.selfId || appState.players.get(appState.selfId)?.host;
@@ -320,6 +373,10 @@ function applyGameState(state) {
   if (!state || !Array.isArray(state.enemies)) return;
   appState.xp = Number(state.xp) || 0;
   appState.level = Math.max(1, Number(state.level) || 1);
+  appState.teamHealth = clamp(Number(state.teamHealth) || 0, 0, 100);
+  appState.energy = clamp(Number(state.energy) || 0, 0, 100);
+  appState.abilityPending = false;
+  renderVitals();
   ui.xpFill.style.width = `${Math.min(100, 12 + appState.level * 5)}%`;
   const skillCount = Math.min(6, 2 + appState.level);
   if (ui.skillRow.children.length !== skillCount) {
@@ -331,15 +388,17 @@ function applyGameState(state) {
   for (const snapshot of state.enemies) {
     seen.add(snapshot.id);
     let enemy = appState.enemies.find((item) => item.group.userData.id === snapshot.id);
-    if (!enemy) enemy = createEnemy({ x: snapshot.x, z: snapshot.z }, snapshot.id, snapshot.hp);
+    if (!enemy) enemy = createEnemy({ x: snapshot.x, z: snapshot.z }, snapshot.id, snapshot.hp, snapshot.elite);
     enemy.group.position.set(snapshot.x, 0, snapshot.z);
     enemy.group.userData.hp = snapshot.hp;
+    enemy.group.userData.elite = Boolean(snapshot.elite);
   }
   appState.enemies = appState.enemies.filter((enemy) => {
     if (seen.has(enemy.group.userData.id)) return true;
     enemyGroup.remove(enemy.group);
     return false;
   });
+  if (appState.teamHealth <= 0) finishRun(false);
 }
 
 function renderRoom() {
@@ -425,14 +484,25 @@ function clearRun() {
   appState.nextPlayerAttacks.clear();
   appState.enemySequence = 0;
   appState.lastGameSync = 0;
+  appState.teamHealth = 100;
+  appState.energy = 0;
+  appState.abilityPending = false;
+  appState.nextTeamHit = 0;
   enemyGroup.clear();
   projectileGroup.clear();
+  for (const burst of appState.bursts) {
+    world.remove(burst.mesh);
+    burst.mesh.geometry.dispose();
+    burst.mesh.material.dispose();
+  }
+  appState.bursts.length = 0;
   appState.xp = 0;
   appState.level = 1;
   ui.xpFill.style.width = "12%";
   ui.skillRow.replaceChildren(...Array.from({ length: 3 }, () => {
     const token = document.createElement("span"); token.className = "skill-token"; return token;
   }));
+  renderVitals();
 }
 
 function showToast(message) {
@@ -494,11 +564,26 @@ function updateRemotePlayers(delta) {
   }
 }
 
+function updateAbilityBursts(delta) {
+  appState.bursts = appState.bursts.filter((burst) => {
+    burst.age += delta;
+    const progress = Math.min(1, burst.age / .62);
+    burst.mesh.scale.setScalar(.1 + progress * 13);
+    burst.mesh.material.opacity = .82 * (1 - progress);
+    if (progress < 1) return true;
+    world.remove(burst.mesh);
+    burst.mesh.geometry.dispose();
+    burst.mesh.material.dispose();
+    return false;
+  });
+}
+
 function updateCombat(now, delta) {
   if (appState.screen !== "game") return;
   if (appState.host) {
     if (now > appState.nextSpawn && appState.enemies.length < 36) {
-      createEnemy();
+      const elite = appState.level >= 2 && Math.random() < .18;
+      createEnemy(null, null, elite ? 4 : 2, elite);
       appState.nextSpawn = now + Math.max(750, 1700 - appState.level * 60) + Math.random() * 500;
     }
     const party = [...appState.players.values()].map((player) => ({
@@ -521,12 +606,18 @@ function updateCombat(now, delta) {
         enemy.group.position.x += dx / Math.max(distance, .001) * data.speed * delta;
         enemy.group.position.z += dz / Math.max(distance, .001) * data.speed * delta;
         enemy.group.rotation.y = Math.atan2(dx, dz);
-      } else if (target.id === appState.selfId && now - data.hitAt > 1100) {
+      } else if (now - data.hitAt > 1100) {
         data.hitAt = now;
-        localPlayer.body.material.color.setHex(0xc08c7d);
-        setTimeout(() => localPlayer.body.material.color.setHex(COLORS[0]), 140);
-        $("combatFlash").classList.add("hit");
-        setTimeout(() => $("combatFlash").classList.remove("hit"), 130);
+        if (now >= appState.nextTeamHit) {
+          appState.teamHealth = Math.max(0, appState.teamHealth - 7);
+          appState.nextTeamHit = now + 650;
+        }
+        if (target.id === appState.selfId) {
+          localPlayer.body.material.color.setHex(0xc08c7d);
+          setTimeout(() => localPlayer.body.material.color.setHex(COLORS[0]), 140);
+          $("combatFlash").classList.add("hit");
+          setTimeout(() => $("combatFlash").classList.remove("hit"), 130);
+        }
       }
     }
     for (const player of party) {
@@ -536,17 +627,7 @@ function updateCombat(now, delta) {
       if (target && target.group.position.distanceTo(player.position) < 17) {
         makeProjectile(player.position, target.group.position);
         target.group.userData.hp -= 1;
-        if (target.group.userData.hp <= 0) {
-          target.group.userData.alive = false;
-          enemyGroup.remove(target.group);
-          appState.xp += 1;
-          if (appState.xp >= 7 + appState.level * 2) {
-            appState.xp = 0;
-            appState.level += 1;
-            ui.xpFill.style.width = `${Math.min(100, 12 + appState.level * 5)}%`;
-            addSkillToken();
-          }
-        }
+        if (target.group.userData.hp <= 0) awardKill(target);
         appState.nextPlayerAttacks.set(player.id, now + Math.max(300, 780 - appState.level * 15));
       }
     }
@@ -558,15 +639,20 @@ function updateCombat(now, delta) {
         state: {
           xp: appState.xp,
           level: appState.level,
+          teamHealth: appState.teamHealth,
+          energy: appState.energy,
           enemies: appState.enemies.map((enemy) => ({
             id: enemy.group.userData.id,
             x: enemy.group.position.x,
             z: enemy.group.position.z,
-            hp: enemy.group.userData.hp
+            hp: enemy.group.userData.hp,
+            elite: enemy.group.userData.elite
           }))
         }
       }));
+      renderVitals();
     }
+    if (appState.teamHealth <= 0) finishRun(false);
   }
   for (const projectile of appState.projectiles) {
     projectile.progress += delta * 3.4;
@@ -605,6 +691,7 @@ function animate() {
   const now = performance.now();
   if (appState.screen === "game") updateMovement(delta);
   updateRemotePlayers(delta);
+  updateAbilityBursts(delta);
   updateCombat(now, delta);
   if (appState.screen === "home") {
     localPlayer.group.position.set(Math.sin(now * .00025) * 1.8, 0, Math.cos(now * .00025) * .9);
@@ -654,6 +741,18 @@ function installControls() {
   $("leaveRoom").addEventListener("click", returnHome);
   $("exitGame").addEventListener("click", returnHome);
   $("cameraToggle").addEventListener("click", () => { appState.cameraMode = 1 - appState.cameraMode; });
+  ui.specialAbility.addEventListener("click", () => {
+    if (ui.specialAbility.disabled || appState.socket?.readyState !== WebSocket.OPEN) return;
+    appState.abilityPending = true;
+    renderVitals();
+    appState.socket.send(JSON.stringify({ type: "ability" }));
+    setTimeout(() => {
+      if (appState.abilityPending) {
+        appState.abilityPending = false;
+        renderVitals();
+      }
+    }, 1200);
+  });
   $("inviteButton").addEventListener("click", async () => {
     if (!appState.roomId) return;
     try { await navigator.clipboard.writeText(`${location.origin}/?room=${appState.roomId}`); showToast("邀請連結已複製"); }
