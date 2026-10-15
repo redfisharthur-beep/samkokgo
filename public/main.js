@@ -1,26 +1,57 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
 
 const COLORS = [0x77877d, 0xb67b6d, 0x8097a0, 0xb49b6e, 0x8e8290, 0x68766b];
+const HEROES = {
+  liubei: { name: "劉備", color: COLORS[0], speed: 11, damage: 1, cadence: 780, range: 17, role: "support" },
+  caocao: { name: "曹操", color: COLORS[5], speed: 10.4, damage: 2, cadence: 980, range: 20, role: "commander" },
+  sunquan: { name: "孫權", color: COLORS[2], speed: 11.6, damage: 1, cadence: 610, range: 19, role: "ranged" },
+  lvbu: { name: "呂布", color: COLORS[1], speed: 10, damage: 3, cadence: 1250, range: 12, role: "vanguard" }
+};
+const MAPS = {
+  forest: { ground: 0xc4c8b6, path: 0xd1c7b2, sky: 0xc7d0c9, leaf: 0x839184 },
+  camp: { ground: 0xc9c0aa, path: 0xb7a589, sky: 0xd2cabb, leaf: 0x9a846c },
+  city: { ground: 0xbfc4b9, path: 0xd2cec1, sky: 0xc3cbc7, leaf: 0x79847e }
+};
+const MAP_ORDER = ["forest", "camp", "city"];
+const DIFFICULTIES = ["easy", "normal", "hard"];
 const WORLD = { x: 48, z: 27 };
-const ROUND_SECONDS = 8 * 60;
+const ROUND_SECONDS = 12 * 60;
 const $ = (id) => document.getElementById(id);
 const ui = {
   home: $("home"), room: $("room"), hud: $("gameHud"), result: $("result"),
   roomDrawer: $("roomDrawer"), roster: $("roster"), partyStrip: $("partyStrip"),
+  heroChoices: $("heroChoices"),
+  mapSelect: $("mapSelect"), difficultySelect: $("difficultySelect"), sizeSelect: $("sizeSelect"),
   timer: $("timer"), xpFill: $("xpFill"), toast: $("toast"), stick: $("touchStick"),
   rotateHint: $("rotateHint"), resultSeal: $("resultSeal"), skillRow: $("skillRow"),
-  healthFill: $("healthFill"), specialAbility: $("specialAbility")
+  healthFill: $("healthFill"), specialAbility: $("specialAbility"),
+  levelChoice: $("levelChoice"), levelChoiceCards: $("levelChoiceCards"),
+  bossHealth: $("bossHealth"), bossHealthFill: $("bossHealthFill"), reviveHint: $("reviveHint"),
+  soundToggle: $("soundToggle"), soundToggleHud: $("soundToggleHud")
+};
+const UPGRADE_OPTIONS = {
+  power: { label: "攻擊", max: 5, icon: '<path d="M8 40 27 21m-9-9 18 18M25 9l5-5 14 14-5 5M8 29l11 11-7 4-8-8Z"/>' },
+  tempo: { label: "攻速", max: 5, icon: '<path d="M7 16a18 18 0 1 1-1 15M7 8v9h9M24 12v12l8 5"/>' },
+  reach: { label: "射程", max: 5, icon: '<circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="9"/><path d="M24 4v7m0 26v7M4 24h7m26 0h7"/>' },
+  speed: { label: "移速", max: 5, icon: '<path d="M5 30h7l4-16 8 20 4-12 4 8h11M8 10l5-5m4 5 5-5"/>' }
 };
 
 const appState = {
   screen: "home", roomId: null, room: null, selfId: null, host: false,
+  heroId: localStorage.getItem("samkokgo-hero") ?? "liubei",
+  mapId: "forest", difficulty: "normal",
   players: new Map(), socket: null, cameraMode: 0, startedAt: null,
   secondsLeft: ROUND_SECONDS, xp: 0, level: 1, muted: false, lastInput: 0,
   pointer: null, move: { x: 0, z: 0 }, enemies: [], pickups: [], projectiles: [],
   nextSpawn: 0, nextAttack: 0, lastGameSync: 0, enemySequence: 0,
-  nextPlayerAttacks: new Map(), teamHealth: 100, energy: 0, abilityPending: false,
-  nextTeamHit: 0, bursts: [], toastTimer: 0, pickupSequence: 0
+  nextPlayerAttacks: new Map(), energy: 0, abilityPending: false,
+  nextTeamHit: 0, bursts: [], toastTimer: 0, pickupSequence: 0,
+  playerProgress: {}, playerVitals: {}, bossesSpawned: new Set(), finalBossDefeated: false,
+  reconnectAttempts: 0, reconnectTimer: 0
 };
+let audioContext = null;
+let musicStep = 0;
+let audioEnabled = localStorage.getItem("samkokgo-sound") === "on";
 
 const renderer = new THREE.WebGLRenderer({ canvas: $("world"), antialias: true, alpha: false, powerPreference: "low-power" });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6));
@@ -35,6 +66,7 @@ const camera = new THREE.OrthographicCamera(-18, 18, 10, -10, 0.1, 220);
 const clock = new THREE.Clock();
 const world = new THREE.Group();
 scene.add(world);
+let mapDecor = new THREE.Group();
 
 const hemi = new THREE.HemisphereLight(0xf2eee4, 0x77786c, 2.1);
 scene.add(hemi);
@@ -57,7 +89,7 @@ floor.receiveShadow = true;
 world.add(floor);
 buildMapDecor();
 
-const localPlayer = makeWarrior(COLORS[0], true);
+let localPlayer = makeWarrior(HEROES[appState.heroId]?.color ?? COLORS[0], true, appState.heroId);
 localPlayer.group.position.set(0, 0, 0);
 world.add(localPlayer.group);
 const playerVisuals = new Map();
@@ -69,37 +101,66 @@ const projectileGroup = new THREE.Group();
 world.add(projectileGroup);
 
 function buildMapDecor() {
+  if (mapDecor.parent) mapDecor.parent.remove(mapDecor);
+  mapDecor.traverse((object) => {
+    if (object.geometry) object.geometry.dispose();
+    if (object.material) for (const material of Array.isArray(object.material) ? object.material : [object.material]) material.dispose();
+  });
+  mapDecor = new THREE.Group();
+  const palette = MAPS[appState.mapId] ?? MAPS.forest;
+  floor.material.color.setHex(palette.ground);
+  scene.background.setHex(palette.sky);
+  scene.fog.color.setHex(palette.sky);
   const path = new THREE.Mesh(
     new THREE.PlaneGeometry(26, WORLD.z * 2),
-    new THREE.MeshStandardMaterial({ color: 0xd1c7b2, roughness: 1 })
+    new THREE.MeshStandardMaterial({ color: palette.path, roughness: 1 })
   );
   path.rotation.x = -Math.PI / 2;
   path.position.y = 0.015;
   path.receiveShadow = true;
-  world.add(path);
+  mapDecor.add(path);
   const crossPath = path.clone();
   crossPath.geometry = new THREE.PlaneGeometry(WORLD.x * 2, 16);
   crossPath.rotation.x = -Math.PI / 2;
-  world.add(crossPath);
+  mapDecor.add(crossPath);
 
   // Muted hills and trees mark the edges without making the playable field feel boxed in.
   const rng = seeded(47);
-  for (let i = 0; i < 42; i++) {
+  for (let i = 0; i < (appState.mapId === "forest" ? 42 : appState.mapId === "camp" ? 24 : 18); i++) {
     const edge = Math.floor(rng() * 4);
     const x = edge < 2 ? (rng() * 2 - 1) * WORLD.x : (edge === 2 ? -1 : 1) * (WORLD.x - 2);
     const z = edge >= 2 ? (rng() * 2 - 1) * WORLD.z : (edge === 0 ? -1 : 1) * (WORLD.z - 2);
-    const tree = makeTree(rng() > 0.55 ? 0x839184 : 0x9a9d87, 0x8b745c);
+    const tree = makeTree(rng() > 0.55 ? palette.leaf : 0x9a9d87, appState.mapId === "camp" ? 0x746954 : 0x8b745c);
     tree.position.set(x, 0, z);
     tree.scale.setScalar(.75 + rng() * .7);
-    world.add(tree);
+    mapDecor.add(tree);
   }
   for (const [x, z] of [[-17, -10], [17, -10], [-17, 10], [17, 10]]) {
     const marker = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2.1, .45, 7), new THREE.MeshStandardMaterial({ color: 0xb8a782, roughness: 1 }));
     marker.position.set(x, .22, z);
     marker.castShadow = true;
     marker.receiveShadow = true;
-    world.add(marker);
+    mapDecor.add(marker);
   }
+  if (appState.mapId === "camp") {
+    for (const [x, z] of [[-12,-8],[12,-8],[-12,8],[12,8]]) {
+      const tent = new THREE.Mesh(new THREE.ConeGeometry(2.8, 3.8, 4), new THREE.MeshStandardMaterial({ color: 0x9f8064, roughness: 1 }));
+      tent.position.set(x, 1.9, z); tent.rotation.y = Math.PI / 4; tent.castShadow = true; mapDecor.add(tent);
+    }
+  }
+  if (appState.mapId === "city") {
+    for (const [x,z,rotation] of [[-33,-15,0],[-33,15,0],[33,-15,0],[33,15,0],[-15,-20,Math.PI/2],[15,20,Math.PI/2]]) {
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(rotation ? 25 : 2.2, 4.5, rotation ? 2.2 : 17), new THREE.MeshStandardMaterial({ color: 0x9b9a89, roughness: 1 }));
+      wall.position.set(x, 2.2, z); wall.castShadow = true; wall.receiveShadow = true; mapDecor.add(wall);
+    }
+  }
+  world.add(mapDecor);
+}
+
+function updateMapVisual(mapId) {
+  if (!MAPS[mapId]) return;
+  appState.mapId = mapId;
+  buildMapDecor();
 }
 
 function makeTree(leafColor, trunkColor) {
@@ -120,13 +181,13 @@ function makeTree(leafColor, trunkColor) {
   return group;
 }
 
-function makeWarrior(color, hero = false) {
+function makeWarrior(color, hero = false, heroId = "liubei") {
   const group = new THREE.Group();
   const armor = new THREE.MeshStandardMaterial({ color, roughness: .83, metalness: .04 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x555c54, roughness: .95 });
   const skin = new THREE.MeshStandardMaterial({ color: 0xd8bda3, roughness: .9 });
   const gold = new THREE.MeshStandardMaterial({ color: 0xc3a66f, roughness: .68, metalness: .1 });
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(hero ? .58 : .48, hero ? .86 : .7, 4, 8), armor);
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(hero ? (heroId === "lvbu" ? .66 : .58) : .48, hero ? .86 : .7, 4, 8), armor);
   body.position.y = 1.15;
   body.castShadow = true;
   group.add(body);
@@ -138,7 +199,8 @@ function makeWarrior(color, hero = false) {
   helmet.position.y = 2.25;
   helmet.castShadow = true;
   group.add(helmet);
-  const plume = new THREE.Mesh(new THREE.ConeGeometry(.17, .68, 7), new THREE.MeshStandardMaterial({ color: hero ? 0xb77b6d : 0x7d7668, roughness: .8 }));
+  const plumeColor = hero ? ({ liubei: 0xb77b6d, caocao: 0x555c54, sunquan: 0x8097a0, lvbu: 0xc2a56f }[heroId] ?? 0xb77b6d) : 0x7d7668;
+  const plume = new THREE.Mesh(new THREE.ConeGeometry(hero && heroId === "lvbu" ? .22 : .17, hero && heroId === "lvbu" ? .95 : .68, 7), new THREE.MeshStandardMaterial({ color: plumeColor, roughness: .8 }));
   plume.position.set(0, 2.8, -.02);
   plume.rotation.z = -.1;
   group.add(plume);
@@ -154,11 +216,28 @@ function makeWarrior(color, hero = false) {
     group.add(arm);
   }
   const weapon = new THREE.Group();
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.045, .05, 2.15, 7), dark);
-  shaft.position.y = 1.05;
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(.16, .5, 6), gold);
-  tip.position.y = 2.35;
-  weapon.add(shaft, tip);
+  if (hero && heroId === "sunquan") {
+    const bow = new THREE.Mesh(new THREE.TorusGeometry(.67, .07, 7, 20, Math.PI * 1.3), gold);
+    bow.scale.set(.62, 1, .5);
+    bow.rotation.z = -.55;
+    weapon.add(bow);
+    const string = new THREE.Mesh(new THREE.CylinderGeometry(.018, .018, 1.1, 5), skin);
+    string.position.set(.36, .08, 0); string.rotation.z = -.28; weapon.add(string);
+  } else if (hero && heroId === "caocao") {
+    const hilt = new THREE.Mesh(new THREE.CylinderGeometry(.07, .07, .72, 7), dark);
+    hilt.position.y = .45;
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(.17, 1.75, .09), new THREE.MeshStandardMaterial({ color: 0xc6c6b7, metalness: .42, roughness: .35 }));
+    blade.position.y = 1.63;
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(.72, .12, .14), gold); guard.position.y = .9;
+    weapon.add(hilt, blade, guard);
+  } else {
+    const length = hero && heroId === "lvbu" ? 3.25 : 2.15;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.045, .05, length, 7), dark);
+    shaft.position.y = length / 2;
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(hero && heroId === "lvbu" ? .28 : .16, hero && heroId === "lvbu" ? .78 : .5, 6), gold);
+    tip.position.y = length + .1;
+    weapon.add(shaft, tip);
+  }
   weapon.position.set(.7, .4, .12);
   weapon.rotation.z = -.22;
   group.add(weapon);
@@ -166,13 +245,86 @@ function makeWarrior(color, hero = false) {
   shadow.rotation.x = -Math.PI / 2;
   shadow.position.y = .035;
   group.add(shadow);
-  return { group, body, weapon, color };
+  if (hero && heroId === "lvbu") group.scale.setScalar(1.12);
+  return { group, body, weapon, color, heroId };
 }
 
-function createEnemy(position = null, id = null, hp = 2, elite = false) {
-  const enemy = makeWarrior(elite ? 0x817e72 : 0x9c6b65, false);
-  enemy.group.scale.setScalar(elite ? 1 : .78);
-  enemy.group.userData = { id: id ?? `enemy-${++appState.enemySequence}`, hp, elite, speed: (elite ? 2.65 : 2.3) + Math.random() * .9, alive: true, hitAt: 0 };
+function setHero(heroId) {
+  if (!HEROES[heroId]) return;
+  appState.heroId = heroId;
+  localStorage.setItem("samkokgo-hero", heroId);
+  ui.heroChoices.querySelectorAll("[data-hero]").forEach((button) => button.classList.toggle("selected", button.dataset.hero === heroId));
+  if (appState.screen === "home") {
+    const position = localPlayer.group.position.clone();
+    world.remove(localPlayer.group);
+    localPlayer = makeWarrior(HEROES[heroId].color, true, heroId);
+    localPlayer.group.position.copy(position);
+    world.add(localPlayer.group);
+  }
+}
+
+function createProgress() { return { xp: 0, level: 1, upgrades: { power: 0, tempo: 0, reach: 0, speed: 0 }, pendingChoices: [] }; }
+function ensureProgress(playerId) { return appState.playerProgress[playerId] ??= createProgress(); }
+function ensureVital(playerId) { return appState.playerVitals[playerId] ??= { hp: 100, maxHp: 100, downed: false, eliminated: false, reviveProgress: 0 }; }
+
+function grantPlayerXp(playerId, amount) {
+  const progress = ensureProgress(playerId);
+  progress.xp += amount;
+  const threshold = 5 + (progress.level - 1) * 2;
+  if (progress.xp >= threshold) {
+    progress.xp -= threshold;
+    progress.level += 1;
+    const available = Object.keys(UPGRADE_OPTIONS).filter((id) => progress.upgrades[id] < UPGRADE_OPTIONS[id].max);
+    progress.pendingChoices.push(available.sort(() => Math.random() - .5).slice(0, Math.min(3, available.length)));
+    if (playerId === appState.selfId) renderLevelChoice(progress);
+  }
+}
+
+function renderLevelChoice(progress) {
+  const offer = progress?.pendingChoices?.[0];
+  if (!offer?.length) { ui.levelChoice.classList.add("hidden"); return; }
+  ui.levelChoiceCards.replaceChildren();
+  for (const id of offer) {
+    const upgrade = UPGRADE_OPTIONS[id];
+    if (!upgrade) continue;
+    const rank = progress.upgrades[id] ?? 0;
+    const button = document.createElement("button");
+    button.className = "upgrade-card";
+    button.setAttribute("aria-label", `${upgrade.label}強化，${rank + 1}級`);
+    button.innerHTML = `<svg viewBox="0 0 48 48" aria-hidden="true">${upgrade.icon}</svg><i>${Array.from({ length: upgrade.max }, (_, index) => `<b class="${index < rank + 1 ? "on" : ""}"></b>`).join("")}</i>`;
+    button.addEventListener("click", () => {
+      if (appState.socket?.readyState !== WebSocket.OPEN) return;
+      ui.levelChoice.classList.add("hidden");
+      appState.socket.send(JSON.stringify({ type: "level-choice", upgradeId: id }));
+    });
+    ui.levelChoiceCards.append(button);
+  }
+  ui.levelChoice.classList.remove("hidden");
+}
+
+function applyLevelChoice(playerId, upgradeId) {
+  if (!appState.host || !UPGRADE_OPTIONS[upgradeId]) return;
+  const progress = appState.playerProgress[playerId];
+  const offer = progress?.pendingChoices?.[0];
+  if (!offer?.includes(upgradeId)) return;
+  if (progress.upgrades[upgradeId] >= UPGRADE_OPTIONS[upgradeId].max) return;
+  progress.upgrades[upgradeId] += 1;
+  progress.pendingChoices.shift();
+  playSound("level");
+  if (playerId === appState.selfId) renderLevelChoice(progress);
+}
+
+function createEnemy(position = null, id = null, hp = 2, elite = false, kind = elite ? "elite" : "grunt", bossIndex = -1) {
+  hp = Math.max(1, Math.ceil(hp * ({ easy: .78, normal: 1, hard: 1.32 }[appState.difficulty] ?? 1)));
+  const color = ({ grunt: 0x9c6b65, runner: 0xb49b6e, archer: 0x8097a0, elite: 0x817e72, boss: 0x685d61 }[kind] ?? 0x9c6b65);
+  const enemy = makeWarrior(color, false);
+  enemy.group.scale.setScalar(kind === "boss" ? 1.85 : kind === "elite" ? 1 : kind === "runner" ? .68 : kind === "archer" ? .84 : .78);
+  const speed = kind === "boss" ? 1.45 : kind === "runner" ? 4.2 : kind === "elite" ? 2.8 : kind === "archer" ? 1.7 : 2.3;
+  enemy.group.userData = { id: id ?? `enemy-${++appState.enemySequence}`, hp, maxHp: hp, elite, kind, bossIndex, speed: speed + Math.random() * (kind === "boss" ? .1 : .55), alive: true, hitAt: 0 };
+  if (kind === "boss") {
+    const aura = new THREE.Mesh(new THREE.RingGeometry(1.35, 1.65, 40), new THREE.MeshBasicMaterial({ color: 0xb77b6d, transparent: true, opacity: .48, side: THREE.DoubleSide, depthWrite: false }));
+    aura.rotation.x = -Math.PI / 2; aura.position.y = .08; enemy.group.add(aura); enemy.group.userData.aura = aura;
+  }
   enemyGroup.add(enemy.group);
   if (position) enemy.group.position.set(position.x, 0, position.z);
   else {
@@ -235,43 +387,107 @@ function showAbilityBurst(x, z) {
   appState.bursts.push({ mesh: ring, age: 0 });
 }
 
-function awardKill(enemy) {
+function awardKill(enemy, killerId = appState.selfId) {
+  if (enemy.group.userData.kind === "boss" && enemy.group.userData.bossIndex === 2) appState.finalBossDefeated = true;
+  playSound("kill");
   enemy.group.userData.alive = false;
   enemyGroup.remove(enemy.group);
-  appState.xp += enemy.group.userData.elite ? 2 : 1;
   appState.energy = Math.min(100, appState.energy + (enemy.group.userData.elite ? 22 : 12));
+  grantPlayerXp(killerId, enemy.group.userData.elite ? 2 : 1);
   if (enemy.group.userData.elite || Math.random() < .24) {
-    const type = appState.teamHealth < 72 && (enemy.group.userData.elite || Math.random() < .58) ? "heal" : "energy";
+    const hurt = Object.values(appState.playerVitals).some((vital) => vital.hp < 72);
+    const type = hurt && (enemy.group.userData.elite || Math.random() < .58) ? "heal" : "energy";
     createPickup(enemy.group.position, null, type);
-  }
-  if (appState.xp >= 7 + appState.level * 2) {
-    appState.xp = 0;
-    appState.level += 1;
-    ui.xpFill.style.width = `${Math.min(100, 12 + appState.level * 5)}%`;
-    addSkillToken();
   }
 }
 
 function activateAbility(playerId, x, z) {
   if (!appState.host || appState.energy < 100 || appState.screen !== "game") return;
   appState.energy = 0;
+  playSound("skill");
   appState.abilityPending = false;
+  const heroId = appState.players.get(playerId)?.heroId ?? (playerId === appState.selfId ? appState.heroId : "liubei");
+  const hero = HEROES[heroId] ?? HEROES.liubei;
+  const progress = ensureProgress(playerId);
+  const radius = hero.role === "ranged" ? 15 : hero.role === "vanguard" ? 10 : 12;
+  const damage = (hero.role === "vanguard" ? 4 : hero.role === "support" ? 1 : 3) + progress.upgrades.power;
+  if (hero.role === "support") {
+    for (const [id, vital] of Object.entries(appState.playerVitals)) {
+      if (vital.eliminated) continue;
+      vital.downed = false;
+      vital.hp = Math.min(vital.maxHp, vital.hp + (vital.hp <= 0 ? 45 : 28));
+      vital.reviveProgress = 0;
+      if (id === appState.selfId) renderVitals();
+    }
+  }
   for (const enemy of appState.enemies) {
-    if (Math.hypot(enemy.group.position.x - x, enemy.group.position.z - z) > 12) continue;
-    enemy.group.userData.hp -= 2;
-    if (enemy.group.userData.hp <= 0) awardKill(enemy);
+    if (Math.hypot(enemy.group.position.x - x, enemy.group.position.z - z) > radius) continue;
+    enemy.group.userData.hp -= damage;
+    if (enemy.group.userData.hp <= 0) awardKill(enemy, playerId);
   }
   appState.enemies = appState.enemies.filter((enemy) => enemy.group.userData.alive);
   renderVitals();
 }
 
 function renderVitals() {
-  ui.healthFill.style.width = `${appState.teamHealth}%`;
+  const vital = appState.playerVitals[appState.selfId];
+  const health = vital ? vital.hp / vital.maxHp * 100 : 100;
+  ui.healthFill.style.width = `${clamp(health, 0, 100)}%`;
+  ui.reviveHint.classList.toggle("hidden", !vital?.downed);
   ui.specialAbility.style.setProperty("--charge", `${appState.energy}%`);
   const ready = appState.energy >= 100;
   ui.specialAbility.disabled = !ready || appState.abilityPending || appState.socket?.readyState !== WebSocket.OPEN;
   ui.specialAbility.classList.toggle("ready", ready && !appState.abilityPending);
   ui.specialAbility.setAttribute("aria-label", ready ? "範圍絕技，能量已滿" : "範圍絕技，能量未滿");
+}
+
+function setAudioEnabled(enabled) {
+  audioEnabled = enabled;
+  localStorage.setItem("samkokgo-sound", enabled ? "on" : "off");
+  const icon = enabled
+    ? '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 12h6l7-6v20l-7-6H5zM23 12a6 6 0 0 1 0 8M25 8a11 11 0 0 1 0 16"/></svg>'
+    : '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 12h6l7-6v20l-7-6H5zM22 13l7 7m0-7-7 7"/></svg>';
+  for (const button of [ui.soundToggle, ui.soundToggleHud]) {
+    button.innerHTML = icon;
+    button.setAttribute("aria-label", enabled ? "關閉音效" : "開啟音效");
+    button.title = enabled ? "關閉音效" : "開啟音效";
+  }
+  if (enabled) {
+    const AudioAPI = window.AudioContext || window.webkitAudioContext;
+    if (!AudioAPI) { audioEnabled = false; showToast("此瀏覽器不支援音效"); return; }
+    audioContext ??= new AudioAPI();
+    audioContext.resume?.().catch(() => {});
+  }
+}
+
+function playTone(frequency, duration = .16, type = "sine", volume = .035) {
+  if (!audioEnabled || !audioContext || appState.screen === "result") return;
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+  gain.gain.setValueAtTime(.0001, audioContext.currentTime);
+  gain.gain.exponentialRampToValueAtTime(volume, audioContext.currentTime + .025);
+  gain.gain.exponentialRampToValueAtTime(.0001, audioContext.currentTime + duration);
+  oscillator.connect(gain).connect(audioContext.destination);
+  oscillator.start(); oscillator.stop(audioContext.currentTime + duration + .02);
+}
+
+function playSound(kind) {
+  const patterns = {
+    attack: [[420,.08,"triangle",.012]], hit: [[150,.18,"sawtooth",.022]], kill: [[520,.09,"sine",.018]],
+    skill: [[330,.2,"triangle",.04],[495,.28,"sine",.03]], level: [[392,.13,"sine",.03],[523,.18,"sine",.026]],
+    revive: [[440,.2,"sine",.03],[587,.25,"sine",.025]], boss: [[110,.35,"triangle",.04],[146,.5,"sawtooth",.025]],
+    win: [[523,.3,"sine",.03],[659,.4,"sine",.03]], loss: [[220,.4,"triangle",.025],[165,.55,"triangle",.02]]
+  };
+  for (const [index, note] of (patterns[kind] ?? []).entries()) setTimeout(() => playTone(...note), index * 115);
+}
+
+function scheduleMusic() {
+  if (!audioEnabled || appState.screen === "result") return;
+  const notes = appState.screen === "game" ? [146.8,174.6,220,196,164.8,130.8] : [220,261.6,293.7,349.2,329.6,261.6];
+  playTone(notes[musicStep++ % notes.length], 1.25, "sine", .008);
+  if (musicStep % 3 === 0) playTone(notes[(musicStep + 2) % notes.length] / 2, 1.8, "triangle", .005);
 }
 
 function nearestEnemy(position = localPlayer.group.position) {
@@ -292,19 +508,20 @@ function setScreen(name) {
   ui.hud.classList.toggle("hidden", name !== "game");
   ui.result.classList.toggle("hidden", name !== "result");
   updateRotateHint();
+  renderGameLock();
   if (name === "home") refreshRooms();
 }
 
 async function createRoom() {
   try {
-    const data = await api("/api/create", { method: "POST" });
+    const data = await api("/api/create", { method: "POST", body: JSON.stringify({ heroId: appState.heroId }) });
     await joinRoom(data.roomId);
   } catch { showToast("目前無法建立房間"); }
 }
 
 async function quickJoin() {
   try {
-    const data = await api("/api/quick-join", { method: "POST" });
+    const data = await api("/api/quick-join", { method: "POST", body: JSON.stringify({ heroId: appState.heroId }) });
     await joinRoom(data.roomId);
   } catch { showToast("目前沒有可加入的房間"); }
 }
@@ -312,26 +529,46 @@ async function quickJoin() {
 async function joinRoom(roomId) {
   closeSocket();
   appState.roomId = roomId;
+  appState.reconnectAttempts = 0;
   appState.players.clear();
   localPlayer.group.position.set(0, 0, 0);
   setScreen("room");
+  connectRoomSocket(roomId);
+}
+
+function connectRoomSocket(roomId) {
   try {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(`${protocol}//${location.host}/ws?room=${encodeURIComponent(roomId)}`);
+    const resumeToken = localStorage.getItem(`samkokgo-resume-${roomId}`) ?? "";
+    const socket = new WebSocket(`${protocol}//${location.host}/ws?room=${encodeURIComponent(roomId)}&hero=${encodeURIComponent(appState.heroId)}&resume=${encodeURIComponent(resumeToken)}`);
     appState.socket = socket;
     renderVitals();
     socket.addEventListener("message", handleSocketMessage);
-    socket.addEventListener("open", renderVitals);
+    socket.addEventListener("open", () => { appState.reconnectAttempts = 0; renderVitals(); });
     socket.addEventListener("close", () => {
       if (appState.socket === socket && appState.roomId) {
         appState.socket = null;
         renderVitals();
-        showToast("連線已中斷");
-        setTimeout(() => { if (appState.screen === "room" || appState.screen === "game") returnHome(); }, 1600);
+        if (appState.reconnectAttempts < 8) {
+          const delay = Math.min(700 * (2 ** appState.reconnectAttempts), 5000);
+          appState.reconnectAttempts += 1;
+          showToast("重新連線中");
+          appState.reconnectTimer = setTimeout(() => {
+            if (appState.roomId === roomId && !appState.socket) connectRoomSocket(roomId);
+          }, delay);
+        } else {
+          showToast("連線逾時");
+          setTimeout(() => { if (appState.roomId === roomId) returnHome(); }, 4000);
+        }
       }
     });
     socket.addEventListener("error", () => showToast("連線發生問題"));
-  } catch { showToast("無法連線到房間"); returnHome(); }
+  } catch {
+    if (appState.reconnectAttempts < 8) {
+      appState.reconnectAttempts += 1;
+      appState.reconnectTimer = setTimeout(() => connectRoomSocket(roomId), 1000);
+    } else { showToast("無法連線到房間"); returnHome(); }
+  }
 }
 
 function handleSocketMessage(event) {
@@ -339,7 +576,17 @@ function handleSocketMessage(event) {
   try { message = JSON.parse(event.data); } catch { return; }
   if (message.type === "welcome") {
     appState.selfId = message.selfId;
+    if (message.resumeToken && appState.roomId) localStorage.setItem(`samkokgo-resume-${appState.roomId}`, message.resumeToken);
     applySnapshot(message.snapshot);
+    if (appState.room?.status === "playing") {
+      clearRun();
+      appState.startedAt = appState.room.startedAt;
+      appState.difficulty = appState.room.difficulty ?? "normal";
+      appState.secondsLeft = Math.max(0, ROUND_SECONDS - Math.floor((Date.now() - appState.startedAt) / 1000));
+      updateMapVisual(appState.room.mapId ?? "forest");
+      if (message.gameState) applyGameState(message.gameState);
+      setScreen("game");
+    }
     return;
   }
   if (message.type === "presence") applySnapshot(message.snapshot);
@@ -349,17 +596,22 @@ function handleSocketMessage(event) {
     showAbilityBurst(message.x, message.z);
     if (appState.host) activateAbility(message.playerId, message.x, message.z);
   }
+  if (message.type === "level-choice" && appState.host) applyLevelChoice(message.playerId, message.upgradeId);
   if (message.type === "room") {
     appState.room = message.room;
     appState.host = appState.room?.hostId === appState.selfId || appState.players.get(appState.selfId)?.host;
     renderRoom();
+    renderGameLock();
   }
   if (message.type === "start") {
     clearRun();
+    appState.difficulty = message.difficulty ?? "normal";
+    updateMapVisual(message.mapId ?? "forest");
     appState.startedAt = message.startedAt;
     appState.secondsLeft = message.duration ?? ROUND_SECONDS;
     appState.nextSpawn = performance.now() + 1800;
     appState.lastGameSync = 0;
+    for (const playerId of appState.players.keys()) { ensureProgress(playerId); ensureVital(playerId); }
     setScreen("game");
     showToast("");
   }
@@ -384,7 +636,7 @@ function setPlayers(players) {
     }
     let visual = playerVisuals.get(player.id);
     if (!visual) {
-      visual = makeWarrior(COLORS[player.colorIndex % COLORS.length], true);
+      visual = makeWarrior(HEROES[player.heroId]?.color ?? COLORS[player.colorIndex % COLORS.length], true, player.heroId ?? "liubei");
       world.add(visual.group);
       playerVisuals.set(player.id, visual);
     }
@@ -404,27 +656,45 @@ function setPlayers(players) {
 
 function applyGameState(state) {
   if (!state || !Array.isArray(state.enemies)) return;
-  appState.xp = Number(state.xp) || 0;
-  appState.level = Math.max(1, Number(state.level) || 1);
-  appState.teamHealth = clamp(Number(state.teamHealth) || 0, 0, 100);
+  if (state.playerProgress && typeof state.playerProgress === "object") appState.playerProgress = state.playerProgress;
+  const ownProgress = appState.playerProgress[appState.selfId];
+  appState.xp = Number(ownProgress?.xp ?? state.xp) || 0;
+  appState.level = Math.max(1, Number(ownProgress?.level ?? state.level) || 1);
+  if (state.playerVitals && typeof state.playerVitals === "object") appState.playerVitals = state.playerVitals;
   appState.energy = clamp(Number(state.energy) || 0, 0, 100);
+  appState.finalBossDefeated = Boolean(state.finalBossDefeated);
+  if (Array.isArray(state.bossesSpawned)) appState.bossesSpawned = new Set(state.bossesSpawned);
   appState.abilityPending = false;
   renderVitals();
-  ui.xpFill.style.width = `${Math.min(100, 12 + appState.level * 5)}%`;
+  const xpThreshold = 5 + ((ownProgress?.level ?? appState.level) - 1) * 2;
+  ui.xpFill.style.width = `${Math.min(100, appState.xp / xpThreshold * 100)}%`;
   const skillCount = Math.min(6, 2 + appState.level);
   if (ui.skillRow.children.length !== skillCount) {
     ui.skillRow.replaceChildren(...Array.from({ length: skillCount }, () => {
       const token = document.createElement("span"); token.className = "skill-token"; return token;
     }));
   }
+  renderLevelChoice(ownProgress);
+  for (const [playerId, vital] of Object.entries(appState.playerVitals)) {
+    if (playerId === appState.selfId) {
+      localPlayer.group.rotation.z = vital.downed ? Math.PI / 2 : 0;
+      localPlayer.group.visible = !vital.eliminated;
+      continue;
+    }
+    const visual = playerVisuals.get(playerId);
+    if (visual) { visual.group.rotation.z = vital.downed ? Math.PI / 2 : 0; visual.group.visible = !vital.eliminated; }
+  }
+  renderVitals();
   const seen = new Set();
   for (const snapshot of state.enemies) {
     seen.add(snapshot.id);
     let enemy = appState.enemies.find((item) => item.group.userData.id === snapshot.id);
-    if (!enemy) enemy = createEnemy({ x: snapshot.x, z: snapshot.z }, snapshot.id, snapshot.hp, snapshot.elite);
+    if (!enemy) enemy = createEnemy({ x: snapshot.x, z: snapshot.z }, snapshot.id, snapshot.hp, snapshot.elite, snapshot.kind, snapshot.bossIndex);
     enemy.group.position.set(snapshot.x, 0, snapshot.z);
     enemy.group.userData.hp = snapshot.hp;
     enemy.group.userData.elite = Boolean(snapshot.elite);
+    enemy.group.userData.kind = snapshot.kind ?? (snapshot.elite ? "elite" : "grunt");
+    enemy.group.userData.bossIndex = Number(snapshot.bossIndex ?? -1);
   }
   appState.enemies = appState.enemies.filter((enemy) => {
     if (seen.has(enemy.group.userData.id)) return true;
@@ -443,7 +713,15 @@ function applyGameState(state) {
     removePickup(pickup);
     return false;
   });
-  if (appState.teamHealth <= 0) finishRun(false);
+  renderBossHealth(state.boss);
+  const vitals = [...appState.players.values()].filter((player) => !player.offline).map((player) => appState.playerVitals[player.id]).filter(Boolean);
+  if (vitals.length && vitals.every((vital) => vital.eliminated || vital.downed)) finishRun(false);
+}
+
+function renderBossHealth(boss) {
+  if (!boss || boss.maxHp <= 0) { ui.bossHealth.classList.add("hidden"); return; }
+  ui.bossHealth.classList.remove("hidden");
+  ui.bossHealthFill.style.width = `${clamp(boss.hp / boss.maxHp * 100, 0, 100)}%`;
 }
 
 function renderRoom() {
@@ -452,8 +730,8 @@ function renderRoom() {
   ui.roster.replaceChildren();
   for (let i = 0; i < (appState.room?.maxPlayers ?? 6); i++) {
     const slot = document.createElement("div");
-    slot.className = `roster-slot${members[i] ? " filled" : ""}${members[i]?.host ? " host" : ""}`;
-    if (members[i]) slot.style.setProperty("--slot-color", colorCss(COLORS[members[i].colorIndex % COLORS.length]));
+    slot.className = `roster-slot${members[i] ? " filled" : ""}${members[i]?.host ? " host" : ""}${members[i]?.offline ? " offline" : ""}`;
+    if (members[i]) slot.style.setProperty("--slot-color", colorCss(HEROES[members[i].heroId]?.color ?? COLORS[members[i].colorIndex % COLORS.length]));
     slot.setAttribute("aria-label", members[i] ? "玩家已加入" : "等待玩家");
     ui.roster.append(slot);
   }
@@ -467,14 +745,37 @@ function renderRoom() {
     : '<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="8" y="21" width="32" height="23" rx="5"/><path d="M15 21v-7a9 9 0 0 1 18 0v7M24 29v7"/></svg>';
   $("startGame").disabled = !appState.host;
   $("startGame").style.opacity = appState.host ? "1" : ".42";
+  const canConfigure = appState.host && appState.room?.status === "waiting";
+  for (const button of [ui.mapSelect, ui.difficultySelect, ui.sizeSelect]) button.disabled = !canConfigure;
+  const mapName = ({ forest: "山林", camp: "軍營", city: "城池" })[appState.room?.mapId ?? "forest"];
+  const difficultyName = ({ easy: "簡單", normal: "普通", hard: "困難" })[appState.room?.difficulty ?? "normal"];
+  ui.mapSelect.title = mapName;
+  ui.mapSelect.setAttribute("aria-label", `地圖：${mapName}`);
+  ui.difficultySelect.title = difficultyName;
+  ui.difficultySelect.setAttribute("aria-label", `難度：${difficultyName}`);
+  ui.sizeSelect.title = `${appState.room?.maxPlayers ?? 6}人房`;
+  ui.sizeSelect.setAttribute("aria-label", `人數上限：${appState.room?.maxPlayers ?? 6}`);
+}
+
+function renderGameLock() {
+  const button = $("gameLock");
+  if (!button) return;
+  const locked = Boolean(appState.room?.locked);
+  button.disabled = !appState.host;
+  button.classList.toggle("selected", locked);
+  button.setAttribute("aria-label", locked ? "解鎖房間" : "鎖定房間");
+  button.title = locked ? "解鎖房間" : "鎖定房間";
+  button.innerHTML = locked
+    ? '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="14" width="22" height="15" rx="3"/><path d="M10 14V9a6 6 0 0 1 12 0M16 19v5"/></svg>'
+    : '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="5" y="14" width="22" height="15" rx="3"/><path d="M10 14V9a6 6 0 0 1 12 0v5M16 19v5"/></svg>';
 }
 
 function renderPartyStrip() {
   ui.partyStrip.replaceChildren();
   [...appState.players.values()].slice(0, 6).forEach((player) => {
     const dot = document.createElement("span");
-    dot.className = "party-dot";
-    dot.style.setProperty("--party-color", colorCss(COLORS[player.colorIndex % COLORS.length]));
+    dot.className = `party-dot${appState.playerVitals[player.id]?.downed || appState.playerVitals[player.id]?.eliminated ? " down" : ""}`;
+    dot.style.setProperty("--party-color", colorCss(HEROES[player.heroId]?.color ?? COLORS[player.colorIndex % COLORS.length]));
     ui.partyStrip.append(dot);
   });
 }
@@ -502,6 +803,9 @@ async function api(path, options = {}) {
 }
 
 function closeSocket() {
+  clearTimeout(appState.reconnectTimer);
+  appState.reconnectTimer = 0;
+  if (appState.roomId) localStorage.removeItem(`samkokgo-resume-${appState.roomId}`);
   if (appState.socket) {
     const socket = appState.socket;
     appState.socket = null;
@@ -532,7 +836,10 @@ function clearRun() {
   appState.enemySequence = 0;
   appState.pickupSequence = 0;
   appState.lastGameSync = 0;
-  appState.teamHealth = 100;
+  appState.playerProgress = {};
+  appState.bossesSpawned.clear();
+  appState.finalBossDefeated = false;
+  appState.playerVitals = {};
   appState.energy = 0;
   appState.abilityPending = false;
   appState.nextTeamHit = 0;
@@ -547,6 +854,8 @@ function clearRun() {
   appState.bursts.length = 0;
   appState.xp = 0;
   appState.level = 1;
+  ui.levelChoice.classList.add("hidden");
+  ui.bossHealth.classList.add("hidden");
   ui.xpFill.style.width = "12%";
   ui.skillRow.replaceChildren(...Array.from({ length: 3 }, () => {
     const token = document.createElement("span"); token.className = "skill-token"; return token;
@@ -593,9 +902,11 @@ function updateMovement(delta) {
   const keys = appState.keys ?? {};
   let x = appState.move.x || ((keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0));
   let z = appState.move.z || ((keys.ArrowDown || keys.KeyS ? 1 : 0) - (keys.ArrowUp || keys.KeyW ? 1 : 0));
+  const ownVital = appState.playerVitals[appState.selfId];
+  if (ownVital?.downed || ownVital?.eliminated) { x = 0; z = 0; }
   const length = Math.hypot(x, z);
   if (length > 1) { x /= length; z /= length; }
-  const speed = 11;
+  const speed = (HEROES[appState.heroId]?.speed ?? 11) + (appState.playerProgress[appState.selfId]?.upgrades?.speed ?? 0);
   localPlayer.group.position.x = clamp(localPlayer.group.position.x + x * speed * delta, -WORLD.x + 2, WORLD.x - 2);
   localPlayer.group.position.z = clamp(localPlayer.group.position.z + z * speed * delta, -WORLD.z + 2, WORLD.z - 2);
   if (length > .08) localPlayer.group.rotation.y = Math.atan2(x, z);
@@ -639,54 +950,101 @@ function updatePickups(delta) {
 function updateCombat(now, delta) {
   if (appState.screen !== "game") return;
   if (appState.host) {
-    if (now > appState.nextSpawn && appState.enemies.length < 36) {
-      const elite = appState.level >= 2 && Math.random() < .18;
-      createEnemy(null, null, elite ? 4 : 2, elite);
-      appState.nextSpawn = now + Math.max(750, 1700 - appState.level * 60) + Math.random() * 500;
+    const elapsed = Math.floor((Date.now() - appState.startedAt) / 1000);
+    const bossTimes = [180, 420, 600];
+    for (let bossIndex = 0; bossIndex < bossTimes.length; bossIndex += 1) {
+      if (elapsed < bossTimes[bossIndex] || appState.bossesSpawned.has(bossIndex)) continue;
+      appState.bossesSpawned.add(bossIndex);
+      createEnemy(null, `boss-${bossIndex}`, 25 + Math.max(1, appState.players.size) * 10 + bossIndex * 12, false, "boss", bossIndex);
+      playSound("boss");
+      showToast("首領來襲");
     }
-    const party = [...appState.players.values()].map((player) => ({
+    if (now > appState.nextSpawn && appState.enemies.length < 36) {
+      const roll = Math.random();
+      const kind = elapsed > 240 && roll < .14 ? "archer" : elapsed > 90 && roll < .32 ? "runner" : elapsed > 120 && roll > .84 ? "elite" : "grunt";
+      const elite = kind === "elite";
+      createEnemy(null, null, elite ? 4 : kind === "grunt" ? 2 : kind === "archer" ? 3 : 1, elite, kind);
+      appState.nextSpawn = now + Math.max(520, 1550 - elapsed * .8) + Math.random() * 420;
+    }
+    const party = [...appState.players.values()].filter((player) => !player.offline).map((player) => ({
       id: player.id,
       position: new THREE.Vector3(player.x, 0, player.z)
     }));
     if (!party.length) party.push({ id: appState.selfId, position: localPlayer.group.position });
+    for (const player of party) ensureVital(player.id);
+    const activeParty = party.filter((player) => !ensureVital(player.id).downed && !ensureVital(player.id).eliminated);
     for (const enemy of appState.enemies) {
       const data = enemy.group.userData;
       if (!data.alive) continue;
-      let target = party[0];
+      if (!activeParty.length) break;
+      let target = activeParty[0];
       let distance = Infinity;
-      for (const player of party) {
+      for (const player of activeParty) {
         const d = enemy.group.position.distanceTo(player.position);
         if (d < distance) { target = player; distance = d; }
       }
       const dx = target.position.x - enemy.group.position.x;
       const dz = target.position.z - enemy.group.position.z;
-      if (distance > 1.65) {
+      const desiredDistance = data.kind === "archer" ? 10 : data.kind === "boss" ? 1.8 : 1.65;
+      if (distance > desiredDistance) {
         enemy.group.position.x += dx / Math.max(distance, .001) * data.speed * delta;
         enemy.group.position.z += dz / Math.max(distance, .001) * data.speed * delta;
         enemy.group.rotation.y = Math.atan2(dx, dz);
-      } else if (now - data.hitAt > 1100) {
+      } else if (now - data.hitAt > (data.kind === "boss" ? 1750 : data.kind === "archer" ? 1350 : 1100)) {
         data.hitAt = now;
         if (now >= appState.nextTeamHit) {
-          appState.teamHealth = Math.max(0, appState.teamHealth - 7);
+          const damage = (data.kind === "boss" ? 15 : data.kind === "elite" ? 9 : data.kind === "archer" ? 6 : data.kind === "runner" ? 5 : 7) * ({ easy: .72, normal: 1, hard: 1.35 }[appState.difficulty] ?? 1);
+          const vital = ensureVital(target.id);
+          vital.hp = Math.max(0, vital.hp - damage);
+          if (vital.hp === 0) {
+            vital.downed = true; vital.downedAt = Date.now(); vital.reviveProgress = 0;
+            const activeIndex = activeParty.findIndex((player) => player.id === target.id);
+            if (activeIndex >= 0) activeParty.splice(activeIndex, 1);
+          }
           appState.nextTeamHit = now + 650;
+          if (data.kind === "boss") showAbilityBurst(target.position.x, target.position.z);
         }
         if (target.id === appState.selfId) {
+          playSound("hit");
           localPlayer.body.material.color.setHex(0xc08c7d);
-          setTimeout(() => localPlayer.body.material.color.setHex(COLORS[0]), 140);
+          setTimeout(() => localPlayer.body.material.color.setHex(HEROES[appState.heroId]?.color ?? COLORS[0]), 140);
           $("combatFlash").classList.add("hit");
           setTimeout(() => $("combatFlash").classList.remove("hit"), 130);
         }
       }
     }
+    for (const downed of party) {
+      const vital = ensureVital(downed.id);
+      if (!vital.downed || vital.eliminated) continue;
+      if (Date.now() - (vital.downedAt ?? Date.now()) > 25000) {
+        vital.downed = false;
+        vital.eliminated = true;
+        continue;
+      }
+      const rescuer = activeParty.find((player) => player.id !== downed.id && player.position.distanceTo(downed.position) < 2.6);
+      if (rescuer) vital.reviveProgress += delta;
+      else vital.reviveProgress = Math.max(0, vital.reviveProgress - delta * .45);
+      if (vital.reviveProgress >= 3) {
+        vital.hp = 50;
+        vital.downed = false;
+        vital.reviveProgress = 0;
+        showAbilityBurst(downed.position.x, downed.position.z);
+        playSound("revive");
+      }
+    }
     for (const player of party) {
       const nextAttack = appState.nextPlayerAttacks.get(player.id) ?? now + 450;
       if (now < nextAttack) continue;
+      const heroId = appState.players.get(player.id)?.heroId ?? (player.id === appState.selfId ? appState.heroId : "liubei");
+      const hero = HEROES[heroId] ?? HEROES.liubei;
+      const progress = ensureProgress(player.id);
       const target = nearestEnemy(player.position);
-      if (target && target.group.position.distanceTo(player.position) < 17) {
+      if (target && target.group.position.distanceTo(player.position) < hero.range + progress.upgrades.reach * 2) {
+        if (player.id === appState.selfId) playSound("attack");
         makeProjectile(player.position, target.group.position);
-        target.group.userData.hp -= 1;
-        if (target.group.userData.hp <= 0) awardKill(target);
-        appState.nextPlayerAttacks.set(player.id, now + Math.max(300, 780 - appState.level * 15));
+        target.group.userData.hp -= hero.damage + progress.upgrades.power;
+        if (target.group.userData.hp <= 0) awardKill(target, player.id);
+        appState.nextPlayerAttacks.set(player.id, now + hero.cadence * Math.pow(.9, progress.upgrades.tempo));
       }
     }
     appState.pickups = appState.pickups.filter((pickup) => {
@@ -694,9 +1052,13 @@ function updateCombat(now, delta) {
         removePickup(pickup);
         return false;
       }
-      const collector = party.find((player) => player.position.distanceTo(pickup.group.position) < 1.7);
+      const collector = activeParty.find((player) => player.position.distanceTo(pickup.group.position) < 1.7);
       if (!collector) return true;
-      if (pickup.type === "heal") appState.teamHealth = Math.min(100, appState.teamHealth + 24);
+      if (pickup.type === "heal") {
+        const vital = ensureVital(collector.id);
+        if (vital.downed) { vital.downed = false; vital.hp = 38; vital.reviveProgress = 0; }
+        else vital.hp = Math.min(vital.maxHp, vital.hp + 28);
+      }
       else appState.energy = Math.min(100, appState.energy + 32);
       showAbilityBurst(pickup.group.position.x, pickup.group.position.z);
       removePickup(pickup);
@@ -711,8 +1073,15 @@ function updateCombat(now, delta) {
         state: {
           xp: appState.xp,
           level: appState.level,
-          teamHealth: appState.teamHealth,
+          playerProgress: appState.playerProgress,
+          playerVitals: appState.playerVitals,
           energy: appState.energy,
+          finalBossDefeated: appState.finalBossDefeated,
+          bossesSpawned: [...appState.bossesSpawned],
+          boss: (() => {
+            const boss = appState.enemies.find((enemy) => enemy.group.userData.kind === "boss");
+            return boss ? { hp: boss.group.userData.hp, maxHp: boss.group.userData.maxHp, bossIndex: boss.group.userData.bossIndex } : null;
+          })(),
           pickups: appState.pickups.map((pickup) => ({
             id: pickup.id,
             x: pickup.group.position.x,
@@ -724,13 +1093,18 @@ function updateCombat(now, delta) {
             x: enemy.group.position.x,
             z: enemy.group.position.z,
             hp: enemy.group.userData.hp,
-            elite: enemy.group.userData.elite
+            elite: enemy.group.userData.elite,
+            kind: enemy.group.userData.kind,
+            bossIndex: enemy.group.userData.bossIndex
           }))
         }
       }));
       renderVitals();
+      const hostBoss = appState.enemies.find((enemy) => enemy.group.userData.kind === "boss");
+      renderBossHealth(hostBoss ? { hp: hostBoss.group.userData.hp, maxHp: hostBoss.group.userData.maxHp } : null);
     }
-    if (appState.teamHealth <= 0) finishRun(false);
+    const vitals = party.map((player) => ensureVital(player.id));
+    if (vitals.length && vitals.every((vital) => vital.downed || vital.eliminated)) finishRun(false);
   }
   for (const projectile of appState.projectiles) {
     projectile.progress += delta * 3.4;
@@ -747,7 +1121,7 @@ function updateCombat(now, delta) {
     const mins = String(Math.floor(appState.secondsLeft / 60)).padStart(2, "0");
     const secs = String(appState.secondsLeft % 60).padStart(2, "0");
     ui.timer.textContent = `${mins}:${secs}`;
-    if (appState.secondsLeft === 0) finishRun(true);
+    if (appState.secondsLeft === 0) finishRun(appState.finalBossDefeated);
   }
 }
 
@@ -759,6 +1133,7 @@ function addSkillToken() {
 
 function finishRun(win) {
   if (appState.screen !== "game") return;
+  playSound(win ? "win" : "loss");
   ui.resultSeal.classList.toggle("win", win);
   setScreen("result");
 }
@@ -813,9 +1188,25 @@ function installControls() {
   stick.addEventListener("pointercancel", resetStick);
 
   $("quickJoin").addEventListener("click", quickJoin);
+  ui.heroChoices.querySelectorAll("[data-hero]").forEach((button) => button.addEventListener("click", () => setHero(button.dataset.hero)));
   $("createRoom").addEventListener("click", createRoom);
   $("refreshRooms").addEventListener("click", refreshRooms);
   $("lockRoom").addEventListener("click", () => sendRoomAction("lock"));
+  ui.mapSelect.addEventListener("click", () => {
+    const current = appState.room?.mapId ?? "forest";
+    const mapId = MAP_ORDER[(MAP_ORDER.indexOf(current) + 1) % MAP_ORDER.length];
+    sendRoomAction("configure", { mapId });
+  });
+  ui.difficultySelect.addEventListener("click", () => {
+    const current = appState.room?.difficulty ?? "normal";
+    const difficulty = DIFFICULTIES[(DIFFICULTIES.indexOf(current) + 1) % DIFFICULTIES.length];
+    sendRoomAction("configure", { difficulty });
+  });
+  ui.sizeSelect.addEventListener("click", () => {
+    const sizes = [2, 4, 6].filter((size) => size >= appState.players.size);
+    const current = appState.room?.maxPlayers ?? 6;
+    sendRoomAction("configure", { maxPlayers: sizes[(sizes.indexOf(current) + 1) % sizes.length] ?? 6 });
+  });
   $("startGame").addEventListener("click", () => sendRoomAction("start"));
   $("leaveRoom").addEventListener("click", returnHome);
   $("exitGame").addEventListener("click", returnHome);
@@ -832,6 +1223,8 @@ function installControls() {
       }
     }, 1200);
   });
+  for (const button of [ui.soundToggle, ui.soundToggleHud]) button.addEventListener("click", () => setAudioEnabled(!audioEnabled));
+  $("gameLock").addEventListener("click", () => sendRoomAction("lock"));
   $("inviteButton").addEventListener("click", async () => {
     if (!appState.roomId) return;
     try { await navigator.clipboard.writeText(`${location.origin}/?room=${appState.roomId}`); showToast("邀請連結已複製"); }
@@ -842,16 +1235,19 @@ function installControls() {
   $("toHome").addEventListener("click", returnHome);
 }
 
-function sendRoomAction(type) {
+function sendRoomAction(type, extra = {}) {
   if (appState.socket?.readyState !== WebSocket.OPEN) return showToast("連線中，請稍候");
-  appState.socket.send(JSON.stringify({ type }));
+  appState.socket.send(JSON.stringify({ type, ...extra }));
 }
 
 window.addEventListener("resize", onResize);
 installControls();
+setHero(appState.heroId);
+setAudioEnabled(audioEnabled);
 clearRun();
 onResize();
 animate();
 if (new URLSearchParams(location.search).has("room")) joinRoom(new URLSearchParams(location.search).get("room"));
 else refreshRooms();
 setInterval(() => { if (appState.screen === "home") refreshRooms(); }, 8000);
+setInterval(scheduleMusic, 1800);
