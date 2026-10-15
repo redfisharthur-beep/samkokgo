@@ -152,6 +152,15 @@ export class GameHub extends DurableObject {
       if (state) this.broadcast(room.id, { type: "game-state", state }, socket);
       return;
     }
+    if (message.type === "ability" && room.status === "playing") {
+      this.broadcast(room.id, {
+        type: "ability",
+        playerId: attachment.playerId,
+        x: attachment.x,
+        z: attachment.z
+      });
+      return;
+    }
     if (message.type === "lock" && attachment.playerId === room.hostId && room.status === "waiting") {
       room.locked = !room.locked;
       rooms[room.id] = room;
@@ -238,12 +247,15 @@ function sanitizeGameState(state) {
     id: String(enemy?.id ?? index).slice(0, 32),
     x: clampNumber(enemy?.x, -WORLD_LIMIT, WORLD_LIMIT),
     z: clampNumber(enemy?.z, -WORLD_DEPTH_LIMIT, WORLD_DEPTH_LIMIT),
-    hp: Math.round(clampNumber(enemy?.hp, 0, 99))
+    hp: Math.round(clampNumber(enemy?.hp, 0, 99)),
+    elite: Boolean(enemy?.elite)
   })).filter((enemy) => enemy.hp > 0);
   return {
     enemies,
     xp: Math.round(clampNumber(state.xp, 0, 9999)),
-    level: Math.round(clampNumber(state.level, 1, 99))
+    level: Math.round(clampNumber(state.level, 1, 99)),
+    teamHealth: Math.round(clampNumber(state.teamHealth, 0, 100)),
+    energy: Math.round(clampNumber(state.energy, 0, 100))
   };
 }
 function json(data, status = 200) {
