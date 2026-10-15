@@ -182,6 +182,7 @@ function makeTree(leafColor, trunkColor) {
 }
 
 function makeWarrior(color, hero = false, heroId = "liubei") {
+  if (hero && heroId === "liubei") return makeLiuBeiWarrior(color);
   const group = new THREE.Group();
   const armor = new THREE.MeshStandardMaterial({ color, roughness: .83, metalness: .04 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x555c54, roughness: .95 });
@@ -247,6 +248,117 @@ function makeWarrior(color, hero = false, heroId = "liubei") {
   group.add(shadow);
   if (hero && heroId === "lvbu") group.scale.setScalar(1.12);
   return { group, body, weapon, color, heroId };
+}
+
+function makeLiuBeiWarrior(color) {
+  const group = new THREE.Group();
+  const robe = new THREE.MeshStandardMaterial({ color: 0x77877d, roughness: .96 });
+  const robeLight = new THREE.MeshStandardMaterial({ color: 0x8f9b8d, roughness: .98 });
+  const ivory = new THREE.MeshStandardMaterial({ color: 0xe7ddc8, roughness: .98, side: THREE.DoubleSide });
+  const leather = new THREE.MeshStandardMaterial({ color: 0x665346, roughness: .94 });
+  const leatherLight = new THREE.MeshStandardMaterial({ color: 0x89745c, roughness: .88 });
+  const gold = new THREE.MeshStandardMaterial({ color: 0xb49b6e, roughness: .74, metalness: .12 });
+  const jade = new THREE.MeshStandardMaterial({ color: 0x819b83, roughness: .34, metalness: .08 });
+  const hair = new THREE.MeshStandardMaterial({ color: 0x403b38, roughness: .96 });
+  const skin = new THREE.MeshStandardMaterial({ color: 0xe0bea2, roughness: .93 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x494842, roughness: .98 });
+
+  const makeMesh = (geometry, material, position, scale) => {
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(...position);
+    if (scale) mesh.scale.set(...scale);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    return mesh;
+  };
+
+  // Layered robe and a short, readable cape silhouette, based on the supplied turn-around.
+  const body = makeMesh(new THREE.CapsuleGeometry(.48, .72, 5, 10), robe, [0, 1.39, 0], [1, 1, .82]);
+  makeMesh(new THREE.ConeGeometry(.83, 1.42, 10), robe, [0, .81, 0], [1, 1, .82]);
+  const capeShape = new THREE.Shape();
+  capeShape.moveTo(-.43, 1.86); capeShape.quadraticCurveTo(0, 2.05, .43, 1.86);
+  capeShape.lineTo(.91, .34); capeShape.quadraticCurveTo(0, .12, -.91, .34); capeShape.closePath();
+  makeMesh(new THREE.ShapeGeometry(capeShape, 8), robeLight, [0, 0, -.48]);
+  const frontPanel = new THREE.Shape();
+  frontPanel.moveTo(-.27, 1.65); frontPanel.lineTo(.27, 1.65); frontPanel.lineTo(.39, .18);
+  frontPanel.quadraticCurveTo(0, .08, -.39, .18); frontPanel.closePath();
+  makeMesh(new THREE.ShapeGeometry(frontPanel, 6), ivory, [0, 0, .57]);
+
+  // Brown lamellar cuirass, shoulder plates, green mantle and a jade belt clasp.
+  makeMesh(new THREE.BoxGeometry(.83, .72, .2), leather, [0, 1.48, .48], [.93, 1, .55]);
+  for (let row = 0; row < 4; row++) {
+    makeMesh(new THREE.BoxGeometry(.69, .045, .045), leatherLight, [0, 1.72 - row * .16, .55]);
+  }
+  for (const side of [-1, 1]) {
+    const pauldron = makeMesh(new THREE.SphereGeometry(.32, 10, 8), gold, [side * .59, 1.83, .03], [1.22, .66, .92]);
+    pauldron.rotation.z = side * -.15;
+    makeMesh(new THREE.SphereGeometry(.2, 9, 7), robe, [side * .67, 1.52, .28], [1.15, 1.4, .82]);
+  }
+  const belt = makeMesh(new THREE.TorusGeometry(.49, .075, 8, 24), leatherLight, [0, .91, 0], [1, 1, .82]);
+  belt.rotation.x = Math.PI / 2;
+  makeMesh(new THREE.SphereGeometry(.18, 12, 10), jade, [0, .94, .53], [1.12, 1, .42]);
+  makeMesh(new THREE.CylinderGeometry(.035, .035, .35, 8), gold, [0, .63, .58]);
+  makeMesh(new THREE.SphereGeometry(.075, 8, 7), jade, [0, .42, .59]);
+
+  // Broad sleeves, ivory cuffs, legs and boots.
+  for (const side of [-1, 1]) {
+    const sleeve = makeMesh(new THREE.CylinderGeometry(.31, .24, .75, 9), robeLight, [side * .68, 1.32, .16]);
+    sleeve.rotation.z = side * -.29;
+    const cuff = makeMesh(new THREE.CylinderGeometry(.3, .3, .16, 9), ivory, [side * .82, .99, .17]);
+    cuff.rotation.z = side * -.29;
+    const leg = makeMesh(new THREE.CylinderGeometry(.19, .2, .65, 9), dark, [side * .24, .34, 0]);
+    leg.rotation.z = side * .04;
+    makeMesh(new THREE.BoxGeometry(.4, .2, .57), dark, [side * .24, .13, .1], [1, 1, 1]);
+    makeMesh(new THREE.BoxGeometry(.42, .08, .59), leatherLight, [side * .24, .23, .1]);
+  }
+
+  // Head, tied hair, moustache and beard; face points toward +Z in the game.
+  makeMesh(new THREE.SphereGeometry(.49, 18, 14), skin, [0, 2.28, .03], [1, 1.12, .9]);
+  makeMesh(new THREE.SphereGeometry(.48, 14, 10), hair, [0, 2.56, -.02], [1.06, .65, .97]);
+  makeMesh(new THREE.SphereGeometry(.25, 12, 9), hair, [0, 2.95, -.13], [.9, 1.12, .9]);
+  for (const side of [-1, 1]) {
+    makeMesh(new THREE.SphereGeometry(.075, 10, 8), ivory, [side * .185, 2.3, .447], [1, 1, .38]);
+    makeMesh(new THREE.SphereGeometry(.046, 10, 8), hair, [side * .185, 2.3, .478], [1, 1, .5]);
+    const brow = makeMesh(new THREE.BoxGeometry(.19, .038, .035), hair, [side * .185, 2.42, .448]);
+    brow.rotation.z = -side * .1;
+  }
+  makeMesh(new THREE.SphereGeometry(.055, 8, 7), skin, [0, 2.22, .48], [.8, 1.25, .8]);
+  const moustache = makeMesh(new THREE.SphereGeometry(.1, 10, 7), hair, [0, 2.14, .46], [1.65, .52, .5]);
+  moustache.rotation.z = Math.PI;
+  makeMesh(new THREE.ConeGeometry(.11, .29, 7), hair, [0, 1.99, .45]);
+
+  // Gold circlet with jade centerpiece, and the paired sheathed swords from the sheet.
+  const circlet = makeMesh(new THREE.TorusGeometry(.39, .055, 8, 20), gold, [0, 2.69, .02], [1, .46, 1]);
+  circlet.rotation.x = Math.PI / 2;
+  makeMesh(new THREE.SphereGeometry(.16, 12, 9), jade, [0, 2.73, .39], [1, 1.08, .55]);
+  for (const side of [-1, 1]) {
+    makeMesh(new THREE.BoxGeometry(.19, .065, .09), gold, [side * .44, 2.67, .02]);
+    const sheath = makeMesh(new THREE.CylinderGeometry(.065, .045, 1.04, 8), leather, [side * .51, .83, .35]);
+    sheath.rotation.z = side * -.12;
+    makeMesh(new THREE.CylinderGeometry(.09, .075, .09, 8), gold, [side * .51, 1.35, .35]);
+    makeMesh(new THREE.CylinderGeometry(.075, .065, .09, 8), gold, [side * .51, .3, .35]);
+  }
+  const weapon = new THREE.Group();
+  for (const side of [-1, 1]) {
+    const sword = new THREE.Group();
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(.045, .05, .42, 8), leatherLight);
+    grip.position.y = .24;
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(.34, .07, .1), gold);
+    guard.position.y = .48;
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(.16, 1.12, .055), new THREE.MeshStandardMaterial({ color: 0xc4c5ba, roughness: .4, metalness: .34 }));
+    blade.position.y = 1.08;
+    sword.add(grip, guard, blade);
+    sword.position.set(side * .4, .52, .52);
+    sword.rotation.z = side * -.18;
+    weapon.add(sword);
+  }
+  group.add(weapon);
+  const shadow = new THREE.Mesh(new THREE.CircleGeometry(.86, 24), new THREE.MeshBasicMaterial({ color: 0x455047, transparent: true, opacity: .22, depthWrite: false }));
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.y = .035;
+  group.add(shadow);
+  return { group, body, weapon, color, heroId: "liubei" };
 }
 
 function setHero(heroId) {
