@@ -107,8 +107,10 @@ const liuBeiLegendTextures = Object.fromEntries(liuBeiViews.map((view) => {
 }));
 function sliceLiuBeiAtlas(texture) {
   const image = texture.image;
-  const cellWidth = Math.floor(image.naturalWidth / 8);
-  const cellHeight = Math.floor(image.naturalHeight / 4);
+  const sourceWidth = image.naturalWidth / 8;
+  const sourceHeight = image.naturalHeight / 4;
+  const cellWidth = Math.round(sourceWidth);
+  const cellHeight = Math.round(sourceHeight);
   return Array.from({ length: 32 }, (_, index) => {
     const canvas = document.createElement("canvas");
     canvas.width = cellWidth;
@@ -116,7 +118,7 @@ function sliceLiuBeiAtlas(texture) {
     const context = canvas.getContext("2d");
     const column = index % 8;
     const row = Math.floor(index / 8);
-    context.drawImage(image, column * cellWidth, row * cellHeight, cellWidth, cellHeight, 0, 0, cellWidth, cellHeight);
+    context.drawImage(image, column * sourceWidth, row * sourceHeight, sourceWidth, sourceHeight, 0, 0, cellWidth, cellHeight);
     const frame = new THREE.CanvasTexture(canvas);
     frame.colorSpace = THREE.SRGBColorSpace;
     frame.minFilter = THREE.LinearMipmapLinearFilter;
