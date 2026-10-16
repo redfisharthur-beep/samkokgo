@@ -43,3 +43,15 @@ test("Godot keyboard and joystick both supply direction to server movement", asy
   assert.match(src, /network_direction := keys\.normalized\(\) if keys\.length\(\) > 0\.1 else move_vector/);
   assert.match(src, /send_input\(network_direction\.x, network_direction\.y/);
 });
+
+test("boss spawn remains guaranteed even when enemy slots are full", () => {
+  const s = makeBattle(0);
+  s.enemies = Array.from({ length: 30 }, (_, i) => ({
+    id: "e-" + i, x: 0, z: 0, hp: 20, kind: "grunt", bossIndex: -1
+  }));
+  s.elapsed = 299.9;
+  advanceBattle(s, party, 1, 300000);
+  assert.equal(s.bossSpawned, true);
+  assert.ok(s.enemies.some(e => e.kind === "boss"));
+  assert.equal(s.enemies.length, 30);
+});

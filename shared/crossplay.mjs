@@ -69,6 +69,10 @@ export function movePlayer(player, dx, dz, seconds) {
   return player;
 }
 function spawn(state, x, z, kind = "grunt", difficulty = "normal", players = 1) {
+  if (kind === "boss" && state.enemies.length >= ENEMY_LIMIT) {
+    const expendable = state.enemies.findIndex(e => e.kind !== "boss");
+    if (expendable >= 0) state.enemies.splice(expendable, 1);
+  }
   if (state.enemies.length >= ENEMY_LIMIT) return;
   const scale = { easy: 0.85, normal: 1, hard: 1.3 }[difficulty] ?? 1;
   const base = { grunt: 20, runner: 15, archer: 19, elite: 42, boss: 600 }[kind] ?? 20;
