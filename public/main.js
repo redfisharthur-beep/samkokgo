@@ -1,4 +1,5 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
+import { godotBattlePath, handoffKey, acceptedResult } from "/lobby-flow.mjs";
 
 const COLORS = [0x77877d, 0xb67b6d, 0x8097a0, 0xb49b6e, 0x8e8290, 0x68766b];
 const HEROES = {
@@ -17,6 +18,9 @@ const DIFFICULTIES = ["easy", "normal", "hard"];
 const PIXEL_SKIN_COLORS = new Set([0xd6b99d, 0xcdb59e, 0xd7bda3, 0xd2b196, 0xc5a58d, 0xc9aa91, 0xcdb39a, 0xc8aa91, 0xb8957f]);
 const WORLD = { x: 48, z: 27 };
 const ROUND_SECONDS = 12 * 60;
+const PROTOCOL_VERSION = 1;
+const RULESET = new URLSearchParams(location.search).get("classic") === "1" ? "threejs-alpha" : "crossplay-v1";
+const protocolPath = (path) => `${path}${path.includes("?") ? "&" : "?"}ruleset=${RULESET}&protocol=${PROTOCOL_VERSION}`;
 const $ = (id) => document.getElementById(id);
 const ui = {
   home: $("home"), room: $("room"), hud: $("gameHud"), result: $("result"),
@@ -113,7 +117,7 @@ const appState = {
   nextPlayerAttacks: new Map(), energy: 0, abilityPending: false,
   nextTeamHit: 0, bursts: [], toastTimer: 0, pickupSequence: 0,
   playerProgress: {}, playerVitals: {}, bossesSpawned: new Set(), finalBossDefeated: false,
-  reconnectAttempts: 0, reconnectTimer: 0
+  reconnectAttempts: 0, reconnectTimer: 0, transferringToGodot: false
 };
 let audioContext = null;
 let musicStep = 0;
@@ -597,11 +601,61 @@ function updateWarriorMotion(visual, now) {
   visual.headGroup.rotation.x = attack ? -strike * .07 : 0;
 }
 
+
+const PIXEL_GENERAL_LORE = {
+  liubei: ["劉備 · 仁德之主", "蜀國主公 · 綠金甲冑，重視同伴生存與支援。"],
+  caocao: ["曹操 · 亂世梟雄", "魏國主公 · 黑金重甲，擅長統帥與強力攻擊。"],
+  sunquan: ["孫權 · 江東霸主", "吳國主公 · 青藍戰袍，快速遠距離壓制敵軍。"],
+  lvbu: ["呂布 · 無雙戰神", "群雄猛將 · 赤金戰鎧，以重擊突破重圍。"]
+};
+const portraitCache = new Map();
+function paintGeneral(canvas, heroId) {
+  if (!canvas || !PIXEL_GENERAL_LORE[heroId]) return;
+  if (!portraitCache.has(heroId)) {
+    const pic = new Image();
+    const ready = new Promise((resolve) => {
+      pic.onload = () => resolve(pic);
+      pic.onerror = () => resolve(null);
+    });
+    pic.src = `/assets/pixel/actors/${heroId}-premium.png`;
+    portraitCache.set(heroId, ready);
+  }
+  portraitCache.get(heroId).then((pic) => {
+    if (!pic || !canvas.isConnected) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, 56, 72);
+    ctx.drawImage(pic, 0, 0, 56, 72, 0, 0, 56, 72);
+  });
+}
+function refreshGeneralPresentation(heroId) {
+  const lore = PIXEL_GENERAL_LORE[heroId] ?? PIXEL_GENERAL_LORE.liubei;
+  if ($("heroInfoTitle")) $("heroInfoTitle").textContent = lore[0];
+  if ($("heroInfo")) $("heroInfo").textContent = lore[1];
+  if ($("currentHeroName")) $("currentHeroName").textContent = HEROES[heroId]?.name ?? "劉備";
+  if (ui.home) ui.home.dataset.hero = heroId;
+}
+function showGeneralPicker(show) {
+  const panel = $("heroPicker");
+  if (!panel) return;
+  panel.classList.toggle("hidden", !show);
+  if (show) panel.querySelector(".hero-choice.selected")?.focus();
+}
+function initializeGeneralArt() {
+  document.querySelectorAll("canvas[data-portrait]").forEach(c => paintGeneral(c, c.dataset.portrait));
+  $("pickHero")?.addEventListener("click", () => showGeneralPicker(true));
+  $("closeHeroPicker")?.addEventListener("click", () => showGeneralPicker(false));
+  $("confirmHero")?.addEventListener("click", () => showGeneralPicker(false));
+  $("heroPicker")?.addEventListener("keydown", (e) => { if (e.key === "Escape") showGeneralPicker(false); });
+}
+
 function setHero(heroId) {
   if (!HEROES[heroId]) return;
   appState.heroId = heroId;
   localStorage.setItem("samkokgo-hero", heroId);
   ui.heroChoices.querySelectorAll("[data-hero]").forEach((button) => button.classList.toggle("selected", button.dataset.hero === heroId));
+  refreshGeneralPresentation(heroId);
   if (appState.screen === "home") {
     const position = localPlayer.group.position.clone();
     world.remove(localPlayer.group);
@@ -666,7 +720,7 @@ function applyLevelChoice(playerId, upgradeId) {
 }
 
 function createEnemy(position = null, id = null, hp = 2, elite = false, kind = elite ? "elite" : "grunt", bossIndex = -1) {
-  hp = Math.max(1, Math.ceil(hp * ({ easy: .78, normal: 1, hard: 1.32 }[appState.difficulty] ?? 1)));
+  hp = RULESET === "crossplay-v1" && id ? hp : Math.max(1, Math.ceil(hp * ({ easy: .78, normal: 1, hard: 1.32 }[appState.difficulty] ?? 1)));
   const color = ({ grunt: 0x9c6b65, runner: 0xb49b6e, archer: 0x8097a0, elite: 0x817e72, boss: 0x685d61 }[kind] ?? 0x9c6b65);
   const enemy = makeWarrior(color, false, "liubei", kind);
   enemy.group.scale.setScalar(kind === "boss" ? 1.48 : kind === "elite" ? 1 : kind === "runner" ? .88 : kind === "archer" ? .92 : .9);
@@ -914,8 +968,11 @@ function renderVitals() {
   const health = vital ? vital.hp / vital.maxHp * 100 : 100;
   ui.healthFill.style.width = `${clamp(health, 0, 100)}%`;
   ui.reviveHint.classList.toggle("hidden", !vital?.downed);
-  ui.specialAbility.style.setProperty("--charge", `${appState.energy}%`);
-  const ready = appState.energy >= 100;
+  const charge = RULESET === "crossplay-v1"
+    ? Math.max(0, Math.min(100, 100 - Math.max(0, (appState.abilityAvailableAt ?? 0) - Date.now()) / 200))
+    : appState.energy;
+  ui.specialAbility.style.setProperty("--charge", `${charge}%`);
+  const ready = RULESET === "crossplay-v1" ? (appState.abilityAvailableAt ?? 0) <= Date.now() : appState.energy >= 100;
   ui.specialAbility.disabled = !ready || appState.abilityPending || appState.socket?.readyState !== WebSocket.OPEN;
   ui.specialAbility.classList.toggle("ready", ready && !appState.abilityPending);
   ui.specialAbility.setAttribute("aria-label", ready ? "範圍絕技，能量已滿" : "範圍絕技，能量未滿");
@@ -988,6 +1045,11 @@ function setScreen(name) {
   ui.room.classList.toggle("hidden", name !== "room");
   ui.hud.classList.toggle("hidden", name !== "game");
   ui.result.classList.toggle("hidden", name !== "result");
+  if (name !== "home") {
+    showGeneralPicker(false);
+    ui.home.classList.remove("rooms-open");
+    $("refreshRooms").setAttribute("aria-expanded", "false");
+  }
   updateRotateHint();
   renderGameLock();
   if (name === "home") refreshRooms();
@@ -995,14 +1057,14 @@ function setScreen(name) {
 
 async function createRoom() {
   try {
-    const data = await api("/api/create", { method: "POST", body: JSON.stringify({ heroId: appState.heroId }) });
+    const data = await api(protocolPath("/api/create"), { method: "POST", body: JSON.stringify({ heroId: appState.heroId }) });
     await joinRoom(data.roomId);
   } catch { showToast("目前無法建立房間"); }
 }
 
 async function quickJoin() {
   try {
-    const data = await api("/api/quick-join", { method: "POST", body: JSON.stringify({ heroId: appState.heroId }) });
+    const data = await api(protocolPath("/api/quick-join"), { method: "POST", body: JSON.stringify({ heroId: appState.heroId }) });
     await joinRoom(data.roomId);
   } catch { showToast("目前沒有可加入的房間"); }
 }
@@ -1010,6 +1072,7 @@ async function quickJoin() {
 async function joinRoom(roomId) {
   closeSocket();
   appState.roomId = roomId;
+  appState.transferringToGodot = false;
   appState.reconnectAttempts = 0;
   appState.players.clear();
   localPlayer.group.position.set(0, 0, 0);
@@ -1021,7 +1084,7 @@ function connectRoomSocket(roomId) {
   try {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const resumeToken = localStorage.getItem(`samkokgo-resume-${roomId}`) ?? "";
-    const socket = new WebSocket(`${protocol}//${location.host}/ws?room=${encodeURIComponent(roomId)}&hero=${encodeURIComponent(appState.heroId)}&resume=${encodeURIComponent(resumeToken)}`);
+    const socket = new WebSocket(`${protocol}//${location.host}/ws?room=${encodeURIComponent(roomId)}&hero=${encodeURIComponent(appState.heroId)}&resume=${encodeURIComponent(resumeToken)}&ruleset=${RULESET}&protocol=${PROTOCOL_VERSION}`);
     appState.socket = socket;
     renderVitals();
     socket.addEventListener("message", handleSocketMessage);
@@ -1052,6 +1115,43 @@ function connectRoomSocket(roomId) {
   }
 }
 
+function transferToGodot() {
+  if (RULESET !== "crossplay-v1" || appState.transferringToGodot || !appState.roomId) return;
+  const roomId = appState.roomId;
+  const token = localStorage.getItem(`samkokgo-resume-${roomId}`);
+  if (!token || appState.socket?.readyState !== WebSocket.OPEN) {
+    showToast("尚未完成玩家身分同步，請重新連線");
+    return;
+  }
+  try { sessionStorage.setItem(handoffKey(roomId), token); }
+  catch { showToast("瀏覽器未允許工作階段儲存，無法接續戰場"); return; }
+  const destination = godotBattlePath(roomId, appState.heroId);
+  const socket = appState.socket;
+  appState.transferringToGodot = true;
+  appState.roomId = null; // suppress lobby auto-reconnect during handoff
+  let navigated = false;
+  const navigate = () => {
+    if (navigated) return;
+    navigated = true;
+    location.assign(destination);
+  };
+  socket.addEventListener("close", navigate, { once: true });
+  socket.close(4100, "handoff"); // reserves the same player on Cloudflare
+  setTimeout(navigate, 1800);
+}
+
+function showWebResult(outcome) {
+  const result = acceptedResult(outcome);
+  if (!result) return;
+  const victory = result === "victory";
+  ui.resultSeal.classList.toggle("win", victory);
+  $("resultHeading").textContent = result === "exit" ? "已離開戰場" : (victory ? "戰鬥勝利" : "挑戰失敗");
+  $("resultMessage").textContent = result === "exit"
+    ? "已返回遊戲大廳，歡迎再次集結隊伍。"
+    : (victory ? "隊伍已完成討伐，準備下一場征途。" : "本次挑戰結束，可重新召集隊友。");
+  setScreen("result");
+}
+
 function handleSocketMessage(event) {
   let message;
   try { message = JSON.parse(event.data); } catch { return; }
@@ -1059,11 +1159,15 @@ function handleSocketMessage(event) {
     appState.selfId = message.selfId;
     if (message.resumeToken && appState.roomId) localStorage.setItem(`samkokgo-resume-${appState.roomId}`, message.resumeToken);
     applySnapshot(message.snapshot);
+    if (appState.room?.status === "playing" && RULESET === "crossplay-v1") {
+      transferToGodot();
+      return;
+    }
     if (appState.room?.status === "playing") {
       clearRun();
       appState.startedAt = appState.room.startedAt;
       appState.difficulty = appState.room.difficulty ?? "normal";
-      appState.secondsLeft = Math.max(0, ROUND_SECONDS - Math.floor((Date.now() - appState.startedAt) / 1000));
+      appState.secondsLeft = Math.max(0, (appState.room?.roundSeconds ?? ROUND_SECONDS) - Math.floor((Date.now() - appState.startedAt) / 1000));
       updateMapVisual(appState.room.mapId ?? "forest");
       if (message.gameState) applyGameState(message.gameState);
       setScreen("game");
@@ -1084,9 +1188,13 @@ function handleSocketMessage(event) {
     const heroId = appState.players.get(message.playerId)?.heroId ?? "liubei";
     const upgrades = appState.playerProgress[message.playerId]?.upgrades ?? {};
     showAbilityBurst(message.x, message.z, heroId, upgrades);
-    if (appState.host) activateAbility(message.playerId, message.x, message.z);
+    if (appState.host && RULESET !== "crossplay-v1") activateAbility(message.playerId, message.x, message.z);
   }
-  if (message.type === "level-choice" && appState.host) applyLevelChoice(message.playerId, message.upgradeId);
+  if (message.type === "level-choice" && appState.host && RULESET !== "crossplay-v1") applyLevelChoice(message.playerId, message.upgradeId);
+  if (message.type === "battle-result") {
+    if (RULESET === "crossplay-v1") showWebResult(message.result);
+    else finishRun(message.result === "victory");
+  }
   if (message.type === "room") {
     appState.room = message.room;
     appState.host = appState.room?.hostId === appState.selfId || appState.players.get(appState.selfId)?.host;
@@ -1094,6 +1202,7 @@ function handleSocketMessage(event) {
     renderGameLock();
   }
   if (message.type === "start") {
+    if (RULESET === "crossplay-v1") { transferToGodot(); return; }
     clearRun();
     appState.difficulty = message.difficulty ?? "normal";
     updateMapVisual(message.mapId ?? "forest");
@@ -1122,6 +1231,14 @@ function setPlayers(players) {
     if (player.id === appState.selfId) {
       appState.host = Boolean(player.host);
       if (appState.screen === "room") localPlayer.group.position.set(player.x, 0, player.z);
+      if (RULESET === "crossplay-v1" && appState.screen === "game") {
+        const dx = player.x - localPlayer.group.position.x;
+        const dz = player.z - localPlayer.group.position.z;
+        if (Math.hypot(dx, dz) > 1.5) {
+          localPlayer.group.position.x += dx * 0.35;
+          localPlayer.group.position.z += dz * 0.35;
+        }
+      }
       continue;
     }
     let visual = playerVisuals.get(player.id);
@@ -1153,6 +1270,7 @@ function applyGameState(state) {
   appState.level = Math.max(1, Number(ownProgress?.level ?? state.level) || 1);
   if (state.playerVitals && typeof state.playerVitals === "object") appState.playerVitals = state.playerVitals;
   appState.energy = clamp(Number(state.energy) || 0, 0, 100);
+  if (RULESET === "crossplay-v1") appState.abilityAvailableAt = state.cooldowns?.[appState.selfId] ?? 0;
   appState.finalBossDefeated = Boolean(state.finalBossDefeated);
   if (Array.isArray(state.bossesSpawned)) appState.bossesSpawned = new Set(state.bossesSpawned);
   appState.abilityPending = false;
@@ -1175,8 +1293,11 @@ function applyGameState(state) {
     seen.add(snapshot.id);
     let enemy = appState.enemies.find((item) => item.group.userData.id === snapshot.id);
     if (!enemy) enemy = createEnemy({ x: snapshot.x, z: snapshot.z }, snapshot.id, snapshot.hp, snapshot.elite, snapshot.kind, snapshot.bossIndex);
+    if (RULESET === "crossplay-v1" && enemy.group.userData.hp > snapshot.hp) {
+      showHitBurst(snapshot.x, snapshot.z, "liubei", {});
+    }
     enemy.targetPosition = new THREE.Vector3(snapshot.x, 0, snapshot.z);
-    if (appState.host) enemy.group.position.copy(enemy.targetPosition);
+    if (appState.host && RULESET !== "crossplay-v1") enemy.group.position.copy(enemy.targetPosition);
     enemy.group.userData.hp = snapshot.hp;
     enemy.group.userData.elite = Boolean(snapshot.elite);
     enemy.group.userData.kind = snapshot.kind ?? (snapshot.elite ? "elite" : "grunt");
@@ -1200,8 +1321,12 @@ function applyGameState(state) {
     return false;
   });
   renderBossHealth(state.boss);
+  if (RULESET === "crossplay-v1" && state.result) {
+    finishRun(state.result === "victory");
+    return;
+  }
   const vitals = [...appState.players.values()].filter((player) => !player.offline).map((player) => appState.playerVitals[player.id]).filter(Boolean);
-  if (vitals.length && vitals.every((vital) => vital.eliminated || vital.downed)) finishRun(false);
+  if (RULESET !== "crossplay-v1" && vitals.length && vitals.every((vital) => vital.eliminated || vital.downed)) finishRun(false);
 }
 
 function renderBossHealth(boss) {
@@ -1217,11 +1342,22 @@ function renderRoom() {
   for (let i = 0; i < (appState.room?.maxPlayers ?? 6); i++) {
     const slot = document.createElement("div");
     slot.className = `roster-slot${members[i] ? " filled" : ""}${members[i]?.host ? " host" : ""}${members[i]?.offline ? " offline" : ""}`;
-    if (members[i]) slot.style.setProperty("--slot-color", colorCss(HEROES[members[i].heroId]?.color ?? COLORS[members[i].colorIndex % COLORS.length]));
+    if (members[i]) {
+      slot.style.setProperty("--slot-color", colorCss(HEROES[members[i].heroId]?.color ?? COLORS[members[i].colorIndex % COLORS.length]));
+      const avatar = document.createElement("canvas");
+      avatar.width = 56; avatar.height = 72; avatar.className = "roster-avatar";
+      slot.append(avatar);
+      paintGeneral(avatar, members[i].heroId ?? "liubei");
+      const name = document.createElement("span");
+      name.className = "roster-name";
+      name.textContent = HEROES[members[i].heroId]?.name ?? "英雄";
+      slot.append(name);
+    }
     slot.setAttribute("aria-label", members[i] ? "玩家已加入" : "等待玩家");
     ui.roster.append(slot);
   }
   ui.roomStatus.dataset.count = `${count}/${appState.room?.maxPlayers ?? 6}`;
+  if ($("roomCode")) $("roomCode").textContent = `房間 ${appState.roomId ?? "--------"} · ${count}/${appState.room?.maxPlayers ?? 6} 人`;
   ui.roomStatus.title = `${count}/${appState.room?.maxPlayers ?? 6}`;
   const locked = Boolean(appState.room?.locked);
   $("lockRoom").classList.toggle("selected", locked);
@@ -1235,6 +1371,11 @@ function renderRoom() {
   for (const button of [ui.mapSelect, ui.difficultySelect, ui.sizeSelect]) button.disabled = !canConfigure;
   const mapName = ({ forest: "山林", camp: "軍營", city: "城池" })[appState.room?.mapId ?? "forest"];
   const difficultyName = ({ easy: "簡單", normal: "普通", hard: "困難" })[appState.room?.difficulty ?? "normal"];
+  const playerLimit = appState.room?.maxPlayers ?? 6;
+  $("mapValue").textContent = mapName;
+  $("difficultyValue").textContent = difficultyName;
+  $("sizeValue").textContent = `${playerLimit} 人`;
+  ui.difficultySelect.dataset.difficulty = appState.room?.difficulty ?? "normal";
   ui.mapSelect.title = mapName;
   ui.mapSelect.setAttribute("aria-label", `地圖：${mapName}`);
   ui.difficultySelect.title = difficultyName;
@@ -1269,8 +1410,14 @@ function renderPartyStrip() {
 async function refreshRooms() {
   if (appState.screen !== "home") return;
   try {
-    const data = await api("/api/rooms");
+    const data = await api(protocolPath("/api/rooms"));
     ui.roomDrawer.replaceChildren();
+    if (!(data.rooms ?? []).length) {
+      const empty = document.createElement("p");
+      empty.className = "rooms-empty";
+      empty.textContent = "目前沒有公開房間，率先建立一支隊伍吧。";
+      ui.roomDrawer.append(empty);
+    }
     for (const room of data.rooms ?? []) {
       const card = document.createElement("button");
       card.className = "room-card";
@@ -1337,6 +1484,7 @@ function clearRun() {
   appState.finalBossDefeated = false;
   appState.playerVitals = {};
   appState.energy = 0;
+  appState.abilityAvailableAt = 0;
   appState.abilityPending = false;
   appState.nextTeamHit = 0;
   enemyGroup.clear();
@@ -1414,7 +1562,7 @@ function updateMovement(delta) {
     localPlayer.lastRunTrail = performance.now();
     showRunTrail(localPlayer.group.position.x, localPlayer.group.position.z, appState.heroId);
   }
-  if (appState.socket?.readyState === WebSocket.OPEN && performance.now() - appState.lastInput > 250) {
+  if (appState.socket?.readyState === WebSocket.OPEN && performance.now() - appState.lastInput > (RULESET === "crossplay-v1" ? 100 : 250)) {
     appState.lastInput = performance.now();
     appState.socket.send(JSON.stringify({ type: "input", x, z, px: localPlayer.group.position.x, pz: localPlayer.group.position.z }));
   }
@@ -1458,6 +1606,19 @@ function updatePickups(delta) {
 
 function updateCombat(now, delta) {
   if (appState.screen !== "game") return;
+  if (RULESET === "crossplay-v1") {
+    for (const enemy of appState.enemies) {
+      if (enemy.targetPosition) enemy.group.position.lerp(enemy.targetPosition, Math.min(1, delta * 9));
+    }
+    if (appState.startedAt) {
+      const duration = appState.room?.roundSeconds ?? 360;
+      appState.secondsLeft = Math.max(0, duration - Math.floor((Date.now() - appState.startedAt) / 1000));
+      const minutes = String(Math.floor(appState.secondsLeft / 60)).padStart(2, "0");
+      const seconds = String(appState.secondsLeft % 60).padStart(2, "0");
+      ui.timer.textContent = minutes + ":" + seconds;
+    }
+    return; // Cloudflare authoritative combat; no local host NPC/XP/damage.
+  }
   if (appState.host) {
     const elapsed = Math.floor((Date.now() - appState.startedAt) / 1000);
     const bossTimes = [180, 420, 600];
@@ -1749,6 +1910,7 @@ function updateCombat(now, delta) {
 }
 
 function finishRun(win) {
+  if (RULESET === "crossplay-v1") { showWebResult(win ? "victory" : "defeat"); return; }
   if (appState.screen !== "game") return;
   playSound(win ? "win" : "loss");
   ui.resultSeal.classList.toggle("win", win);
@@ -1796,6 +1958,23 @@ function installControls() {
   const knob = stick.querySelector(".stick-knob");
   let stickOrigin = null;
   let stickRadius = 48;
+  const clearMovementInput = (event = null) => {
+    if (event?.pointerId != null && appState.pointer !== event.pointerId) return;
+    appState.pointer = null;
+    stickOrigin = null;
+    appState.keys = {};
+    appState.move = { x: 0, z: 0 };
+    appState.moveCurrent = { x: 0, z: 0 };
+    stick.classList.remove("active");
+    knob.style.transform = "translate(-50%,-50%)";
+    if (localPlayer) localPlayer.moving = false;
+    if (appState.socket?.readyState === WebSocket.OPEN && appState.screen === "game") {
+      appState.socket.send(JSON.stringify({
+        type: "input", x: 0, z: 0,
+        px: localPlayer.group.position.x, pz: localPlayer.group.position.z
+      }));
+    }
+  };
   const setStick = (event) => {
     if (!stickOrigin) return;
     const dx = event.clientX - stickOrigin.x;
@@ -1809,14 +1988,7 @@ function installControls() {
     const knobDistance = Math.min(distance, stickRadius);
     knob.style.transform = `translate(calc(-50% + ${directionX * knobDistance}px), calc(-50% + ${directionY * knobDistance}px))`;
   };
-  const resetStick = (event) => {
-    if (appState.pointer !== event.pointerId) return;
-    appState.pointer = null;
-    stickOrigin = null;
-    appState.move = { x: 0, z: 0 };
-    stick.classList.remove("active");
-    knob.style.transform = "translate(-50%,-50%)";
-  };
+  const resetStick = (event) => clearMovementInput(event);
   document.addEventListener("pointerdown", (event) => {
     if (appState.screen !== "game" || appState.pointer !== null || event.button > 0) return;
     if (event.target.closest("button, a, input, select, textarea, .level-choice, .rotate-hint")) return;
@@ -1833,11 +2005,19 @@ function installControls() {
   window.addEventListener("pointermove", (event) => { if (appState.pointer === event.pointerId) setStick(event); });
   window.addEventListener("pointerup", resetStick);
   window.addEventListener("pointercancel", resetStick);
+  window.addEventListener("blur", () => clearMovementInput());
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) clearMovementInput();
+  });
 
   $("quickJoin").addEventListener("click", quickJoin);
   ui.heroChoices.querySelectorAll("[data-hero]").forEach((button) => button.addEventListener("click", () => setHero(button.dataset.hero)));
   $("createRoom").addEventListener("click", createRoom);
-  $("refreshRooms").addEventListener("click", refreshRooms);
+  $("refreshRooms").addEventListener("click", async () => {
+    const open = ui.home.classList.toggle("rooms-open");
+    $("refreshRooms").setAttribute("aria-expanded", String(open));
+    if (open) await refreshRooms();
+  });
   $("lockRoom").addEventListener("click", () => sendRoomAction("lock"));
   ui.mapSelect.addEventListener("click", () => {
     const current = appState.room?.mapId ?? "forest";
@@ -1861,6 +2041,7 @@ function installControls() {
   ui.specialAbility.addEventListener("click", () => {
     if (ui.specialAbility.disabled || appState.socket?.readyState !== WebSocket.OPEN) return;
     appState.abilityPending = true;
+    if (RULESET === "crossplay-v1") appState.abilityAvailableAt = Date.now() + 20000;
     renderVitals();
     appState.socket.send(JSON.stringify({ type: "ability" }));
     setTimeout(() => {
@@ -1874,7 +2055,12 @@ function installControls() {
   $("gameLock").addEventListener("click", () => sendRoomAction("lock"));
   $("inviteButton").addEventListener("click", async () => {
     if (!appState.roomId) return;
-    try { await navigator.clipboard.writeText(`${location.origin}/?room=${appState.roomId}`); showToast("邀請連結已複製"); }
+    try {
+      const browserLink = `${location.origin}/?room=${appState.roomId}${RULESET === "crossplay-v1" ? "" : "&classic=1"}`;
+      const invitation = browserLink;
+      await navigator.clipboard.writeText(invitation);
+      showToast("邀請連結已複製");
+    }
     catch { showToast("請使用瀏覽器分享功能邀請"); }
   });
   $("fullscreen").addEventListener("click", () => document.documentElement.requestFullscreen?.().catch(() => {}));
@@ -1889,13 +2075,17 @@ function sendRoomAction(type, extra = {}) {
 
 window.addEventListener("resize", onResize);
 installControls();
+initializeGeneralArt();
 ui.specialAbility.replaceChildren(pixelIcon("special", "special-pixel-icon"));
 setHero(appState.heroId);
 setAudioEnabled(audioEnabled);
 clearRun();
 onResize();
 animate();
-if (new URLSearchParams(location.search).has("room")) joinRoom(new URLSearchParams(location.search).get("room"));
+const launchRoute = new URLSearchParams(location.search);
+const outcome = acceptedResult(launchRoute.get("result"));
+if (outcome) showWebResult(outcome);
+else if (launchRoute.has("room")) joinRoom(launchRoute.get("room"));
 else refreshRooms();
 setInterval(() => { if (appState.screen === "home") refreshRooms(); }, 8000);
 setInterval(scheduleMusic, 1800);

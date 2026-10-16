@@ -1,0 +1,106 @@
+name: Godot 4.3 project check
+
+on:
+  push:
+    branches: [godot4-integration]
+    paths:
+      - "godot/**"
+      - "shared/**"
+      - "tests/**"
+      - "worker.js"
+      - "public/main.js"
+      - ".github/workflows/godot-check.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "godot/**"
+      - "shared/**"
+      - "tests/**"
+      - "worker.js"
+      - "public/main.js"
+      - ".github/workflows/godot-check.yml"
+  workflow_dispatch:
+
+jobs:
+  import-project:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check Worker and browser JavaScript
+        run: node --check worker.js && node --check public/main.js
+
+      - name: Verify shared room protocol
+        run: node --test tests/protocol.test.mjs
+
+      - name: Install Godot 4.3 headless
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip \
+            --output /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          chmod +x /tmp/godot/Godot_v4.3-stable_linux.x86_64
+          echo "GODOT=/tmp/godot/Godot_v4.3-stable_linux.x86_64" >> "$GITHUB_ENV"
+
+      - name: Prepare embedded Traditional Chinese font
+        shell: bash
+        run: |
+          python3 -m venv /tmp/fonttools
+          /tmp/fonttools/bin/pip install --disable-pip-version-check fonttools==4.60.1
+          curl --fail --location --retry 3 \
+            "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf" \
+            --output /tmp/NotoSansTC-full.ttf
+          mkdir -p godot/fonts
+          python3 - <<'PY'
+          from pathlib import Path
+          sources = sorted(Path("godot").rglob("*.gd"))
+          text = "\n".join(path.read_text(encoding="utf-8") for path in sources)
+          Path("/tmp/game-font-text.txt").write_text(text, encoding="utf-8")
+          PY
+          /tmp/fonttools/bin/pyftsubset /tmp/NotoSansTC-full.ttf \
+            --text-file=/tmp/game-font-text.txt \
+            --output-file=godot/fonts/NotoSansTC.ttf \
+            --layout-features="*" \
+            --name-IDs="*" \
+            --name-languages="*" \
+            --glyph-names \
+            --notdef-glyph \
+            --notdef-outline \
+            --recommended-glyphs
+          curl --fail --location --retry 3 \
+            "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstc/OFL.txt" \
+            --output godot/fonts/OFL.txt
+          ls -lh godot/fonts/NotoSansTC.ttf
+      - name: Import and parse Godot project
+        run: $GODOT --headless --editor --path godot --quit
+
+      - name: Launch prototype in headless mode
+        run: $GODOT --headless --path godot --quit-after 3
+
+      - name: Smoke-test animated pixel actors and isometric tilemap
+        run: $GODOT --headless --path godot --script res://tests/pixel_art_smoke.gd
+
+      - name: Install Godot 4.3 Web export templates
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz \
+            --output /tmp/godot-templates.tpz
+          unzip -q /tmp/godot-templates.tpz -d /tmp/godot-templates
+          mkdir -p "$HOME/.local/share/godot/export_templates/4.3.stable"
+          cp -R /tmp/godot-templates/templates/. "$HOME/.local/share/godot/export_templates/4.3.stable/"
+
+      - name: Export browser build
+        run: |
+          mkdir -p godot/build/web
+          "$GODOT" --headless --path godot --export-release "Web" build/web/index.html
+
+      - name: Upload browser build
+        uses: actions/upload-artifact@v4
+        with:
+          name: samkokgo-godot-web
+          path: godot/build/web/
+          if-no-files-found: error
+          retention-days: 14
