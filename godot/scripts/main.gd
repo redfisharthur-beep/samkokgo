@@ -502,14 +502,7 @@ func _add_team_xp(amount: int) -> void:
 		xp -= xp_goal
 		level += 1
 		xp_goal = 5 + level * 3
-	var state_vitals: Variant = state.get("playerVitals", {})
-	if state_vitals is Dictionary:
-		player_vitals = state_vitals
-		var own_vital: Dictionary = player_vitals.get(network.self_id, {})
-		if not own_vital.is_empty():
-			hp = float(own_vital.get("hp", hp))
-			max_hp = float(own_vital.get("maxHp", max_hp))
-		_open_upgrade()
+	_open_upgrade()
 
 func _collect_shared_pickup(pickup_id: String) -> void:
 	for i in range(drops.size()):
@@ -653,14 +646,20 @@ func _on_room_event(event: Dictionary) -> void:
 func _update_room_players(players: Array) -> void:
 	remote_players.clear()
 	is_host = false
+	var connected_ids: Array[String] = [network.self_id]
 	for value in players:
 		if not value is Dictionary:
 			continue
 		var player: Dictionary = value
-		if str(player.get("id", "")) == network.self_id:
+		var player_id := str(player.get("id", ""))
+		if player_id == network.self_id:
 			is_host = bool(player.get("host", false))
 		else:
 			remote_players.append(player)
+			connected_ids.append(player_id)
+	if mode == "battle":
+		for player_id in connected_ids:
+			_ensure_vital(player_id)
 	status_text = "房間已連線 · %d 位隊友" % remote_players.size()
 
 func _apply_remote_attack(event: Dictionary) -> void:
@@ -752,7 +751,14 @@ func _apply_game_state(state: Dictionary) -> void:
 	xp = int(state.get("xp", xp))
 	level = int(state.get("level", level))
 	xp_goal = 5 + level * 3
-
+	var state_vitals: Variant = state.get("playerVitals", {})
+	if state_vitals is Dictionary:
+		player_vitals = state_vitals
+		var own_vital: Dictionary = player_vitals.get(network.self_id, {})
+		if not own_vital.is_empty():
+			hp = float(own_vital.get("hp", hp))
+			max_hp = float(own_vital.get("maxHp", max_hp))
+	
 func _screen_to_world(pos: Vector2) -> Vector2:
 	var size := get_viewport_rect().size
 	return Vector2(pos.x / maxf(size.x, 1.0) * 96.0 - 48.0, pos.y / maxf(size.y, 1.0) * 54.0 - 27.0)
@@ -812,10 +818,18 @@ func _draw_battle(size: Vector2) -> void:
 	for particle in particles:
 		draw_circle(particle["pos"], 2.3, particle["color"])
 	for player in remote_players:
+		var player_id := str(player.get("id", ""))
 		var remote_pos := _world_to_screen(Vector2(float(player.get("x", 0.0)), float(player.get("z", 0.0))))
 		var tint := Color.from_hsv(float(player.get("colorIndex", 0)) / 6.0, 0.28, 0.78)
-		_draw_hero(remote_pos, 0.82, tint, Color("#494c4a"), Color("#bd9e68"), 0.0)
-	_draw_hero(player_pos, 1.0 + minf(0.16, level * 0.008), Color("#708b78"), Color("#353b37"), Color("#c4a766"), 0.0)
+		var vital: Dictionary = player_vitals.get(player_id, {})
+		var out := bool(vital.get("downed", false)) or bool(vital.get("eliminated", false))
+		_draw_hero(remote_pos, 0.82, tint.darkened(0.45) if out else tint, Color("#494c4a"), Color("#bd9e68"), 0.0)
+		_draw_player_vital(remote_pos, vital, 0.82)
+	var own_vital: Dictionary = player_vitals.get(network.self_id, {})
+	var own_out := bool(own_vital.get("downed", false)) or bool(own_vital.get("eliminated", false))
+	_draw_hero(player_pos, 1.0 + minf(0.16, level * 0.008), Color("#708b78").darkened(0.45) if own_out else Color("#708b78"), Color("#353b37"), Color("#c4a766"), 0.0)
+	if room_connected:
+		_draw_player_vital(player_pos, own_vital, 1.0)
 	_draw_hud(size)
 	if moving_touch >= 0:
 		draw_circle(move_origin, 43.0, Color(0.18, 0.2, 0.17, 0.22))
@@ -911,8 +925,22 @@ func _draw_hud(size: Vector2) -> void:
 		_draw_bar(Rect2(size.x * 0.3, 91, size.x * 0.4, 13), boss_hp / 1600.0, Color("#b66e5e"))
 		draw_string(ThemeDB.fallback_font, Vector2(size.x * 0.5 - 60, 121), "董卓", HORIZONTAL_ALIGNMENT_CENTER, 120, 16, PAPER)
 	for i in range(mini(6, remote_players.size())):
-		draw_circle(Vector2(size.x - 28 - i * 30, 39), 12, Color("#9cab9e"))
-		draw_circle(Vector2(size.x - 28 - i * 30, 39), 5, Color("#e0d1b7"))
+		var player_id := str(remote_players[i].get("id", ""))
+		var vital: Dictionary = player_vitals.get(player_id, {})
+		var marker := Vector2(size.x - 28 - i * 30, 39)
+		draw_circle(marker, 12, Color("#a47769") if _vital_is_out(player_id) else Color("#9cab9e"))
+		draw_circle(marker, 5, Color("#e0d1b7"))
+		if not vital.is_empty():
+			_draw_bar(Rect2(marker + Vector2(-11, 16), Vector2(22, 4)), float(vital.get("hp", 0.0)) / maxf(1.0, float(vital.get("maxHp", 100.0))), RUST)
+
+func _draw_player_vital(pos: Vector2, vital: Dictionary, scale: float) -> void:
+	if vital.is_empty():
+		return
+	var out := bool(vital.get("downed", false)) or bool(vital.get("eliminated", false))
+	var bar_pos := pos + Vector2(-21.0 * scale, -47.0 * scale)
+	_draw_bar(Rect2(bar_pos, Vector2(42.0 * scale, 5.0 * scale)), float(vital.get("hp", 0.0)) / maxf(1.0, float(vital.get("maxHp", 100.0))), RUST)
+	if out:
+		draw_arc(pos, 30.0 * scale, 0, TAU * clampf(float(vital.get("reviveProgress", 0.0)) / REVIVE_SECONDS, 0.0, 1.0), 32, GOLD, 4.0, true)
 
 func _draw_bar(rect: Rect2, ratio: float, fill: Color) -> void:
 	draw_rect(rect, Color("#45483e"), true, 4.0)
