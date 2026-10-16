@@ -187,7 +187,7 @@ func _update_stick(pos: Vector2) -> void:
 
 func _handle_lobby_click(pos: Vector2) -> void:
 	var size := get_viewport_rect().size
-	var center := size.x * 0.5
+	var center := Vector2(size.x * 0.5, size.y * 0.5)
 	if Rect2(center - Vector2(180, 35), Vector2(360, 68)).has_point(pos):
 		network.quick_join()
 		status_text = "正在尋找隊友…"
@@ -1073,7 +1073,7 @@ func _draw_end(size: Vector2) -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.12, 0.14, 0.13, 0.78))
 	draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.42), "此戰告捷" if is_win else "隊伍潰散", HORIZONTAL_ALIGNMENT_CENTER, size.x, 42, PAPER)
 	draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.51), "擊破 %d · 到達第 %d 級" % [kills, level], HORIZONTAL_ALIGNMENT_CENTER, size.x, 22, Color("#d4c8b1"))
-	draw_button(Rect2(size.x * 0.5 - 130, size.y * 0.62, 260, 58), "返回大廳", MOSS)
+	_draw_button(Rect2(size.x * 0.5 - 130, size.y * 0.62, 260, 58), "返回大廳", MOSS)
 
 func draw_ellipse(center: Vector2, radius: Vector2, color: Color) -> void:
 	var points := PackedVector2Array()
