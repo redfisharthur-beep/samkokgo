@@ -55,6 +55,24 @@ jobs:
           mkdir -p godot/build/web
           "$GODOT" --headless --path godot --export-release "Web" build/web/index.html
 
+      - name: Brotli-compress the Godot WebAssembly
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const zlib = require("node:zlib");
+          const path = "godot/build/web/index.wasm";
+          const original = fs.readFileSync(path);
+          const compressed = zlib.brotliCompressSync(original, {
+            params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 9 }
+          });
+          fs.writeFileSync(path, compressed);
+          console.log(`WebAssembly: ${original.length} bytes -> ${compressed.length} bytes`);
+          if (compressed.length > 25 * 1024 * 1024) {
+            throw new Error("Compressed WebAssembly still exceeds Cloudflare's 25 MiB asset limit.");
+          }
+          NODE
+
       - name: Deploy game and multiplayer Worker
         run: npx --yes wrangler@4 deploy --config wrangler.godot-production.toml
         env:
