@@ -2,6 +2,7 @@ extends Control
 
 @onready var network: CloudflareRoom = $CloudflareRoom
 
+const UI_FONT: Font = preload("res://fonts/NotoSansTC.ttf")
 const INK := Color("#302f2b")
 const PAPER := Color("#ddd2bd")
 const MOSS := Color("#728174")
@@ -895,15 +896,15 @@ func _draw_lobby(size: Vector2) -> void:
 	_draw_faint_mountain(size)
 	var center := size * 0.5
 	draw_circle(center + Vector2(0, -175), 53.0, Color("#c7a96d"))
-	draw_string(ThemeDB.fallback_font, center + Vector2(-88, -160), "三國", HORIZONTAL_ALIGNMENT_CENTER, 176.0, 48, INK)
-	draw_string(ThemeDB.fallback_font, center + Vector2(-150, -112), "亂世同征", HORIZONTAL_ALIGNMENT_CENTER, 300.0, 23, Color("#565b50"))
+	draw_string(UI_FONT, center + Vector2(-88, -160), "三國", HORIZONTAL_ALIGNMENT_CENTER, 176.0, 48, INK)
+	draw_string(UI_FONT, center + Vector2(-150, -112), "亂世同征", HORIZONTAL_ALIGNMENT_CENTER, 300.0, 23, Color("#565b50"))
 	_draw_button(Rect2(center + Vector2(-180, -70), Vector2(360, 58)), "快速加入", MOSS)
 	_draw_button(Rect2(center + Vector2(-180, 2), Vector2(360, 58)), "建立房間", Color("#8b7967"))
 	_draw_button(Rect2(center + Vector2(-130, 82), Vector2(260, 54)), "開始試玩", Color("#9a7867"))
-	draw_string(ThemeDB.fallback_font, center + Vector2(-300, 175), status_text, HORIZONTAL_ALIGNMENT_CENTER, 600.0, 17, INK)
+	draw_string(UI_FONT, center + Vector2(-300, 175), status_text, HORIZONTAL_ALIGNMENT_CENTER, 600.0, 17, INK)
 	if not room_id.is_empty():
-		draw_string(ThemeDB.fallback_font, center + Vector2(-100, 207), "房間 " + room_id, HORIZONTAL_ALIGNMENT_CENTER, 200.0, 15, INK)
-	draw_string(ThemeDB.fallback_font, Vector2(18, size.y - 20), "WASD / 方向鍵 移動 · 觸控任意位置拖曳", HORIZONTAL_ALIGNMENT_LEFT, size.x - 36, 14, Color("#565b50"))
+		draw_string(UI_FONT, center + Vector2(-100, 207), "房間 " + room_id, HORIZONTAL_ALIGNMENT_CENTER, 200.0, 15, INK)
+	draw_string(UI_FONT, Vector2(18, size.y - 20), "WASD / 方向鍵 移動 · 觸控任意位置拖曳", HORIZONTAL_ALIGNMENT_LEFT, size.x - 36, 14, Color("#565b50"))
 
 func _draw_battle(size: Vector2) -> void:
 	_draw_battlefield(size)
@@ -1019,14 +1020,14 @@ func _draw_hud(size: Vector2) -> void:
 	draw_rect(Rect2(Vector2(0, 0), Vector2(size.x, 82)), Color(0.17, 0.19, 0.17, 0.85))
 	_draw_bar(Rect2(25, 24, minf(240, size.x * 0.28), 18), hp / max_hp, RUST)
 	_draw_bar(Rect2(25, 52, minf(240, size.x * 0.28), 10), float(xp) / float(xp_goal), JADE)
-	draw_string(ThemeDB.fallback_font, Vector2(30, 20), "劉備", HORIZONTAL_ALIGNMENT_LEFT, 100, 16, PAPER)
-	draw_string(ThemeDB.fallback_font, Vector2(25, 79), "Lv.%d  ·  %d" % [level, kills], HORIZONTAL_ALIGNMENT_LEFT, 170, 14, PAPER)
+	draw_string(UI_FONT, Vector2(30, 20), "劉備", HORIZONTAL_ALIGNMENT_LEFT, 100, 16, PAPER)
+	draw_string(UI_FONT, Vector2(25, 79), "Lv.%d  ·  %d" % [level, kills], HORIZONTAL_ALIGNMENT_LEFT, 170, 14, PAPER)
 	var timer := int(maxf(0.0, 360.0 - elapsed))
 	var time_text := "%02d:%02d" % [timer / 60, timer % 60]
-	draw_string(ThemeDB.fallback_font, Vector2(size.x * 0.5 - 60, 42), time_text, HORIZONTAL_ALIGNMENT_CENTER, 120, 25, PAPER)
+	draw_string(UI_FONT, Vector2(size.x * 0.5 - 60, 42), time_text, HORIZONTAL_ALIGNMENT_CENTER, 120, 25, PAPER)
 	if boss_spawned and boss_hp > 0.0:
 		_draw_bar(Rect2(size.x * 0.3, 91, size.x * 0.4, 13), boss_hp / 1600.0, Color("#b66e5e"))
-		draw_string(ThemeDB.fallback_font, Vector2(size.x * 0.5 - 60, 121), "董卓", HORIZONTAL_ALIGNMENT_CENTER, 120, 16, PAPER)
+		draw_string(UI_FONT, Vector2(size.x * 0.5 - 60, 121), "董卓", HORIZONTAL_ALIGNMENT_CENTER, 120, 16, PAPER)
 	for i in range(mini(6, remote_players.size())):
 		var player_id := str(remote_players[i].get("id", ""))
 		var vital: Dictionary = player_vitals.get(player_id, {})
@@ -1052,11 +1053,11 @@ func _draw_bar(rect: Rect2, ratio: float, fill: Color) -> void:
 func _draw_button(rect: Rect2, text: String, fill: Color) -> void:
 	draw_rect(Rect2(rect.position + Vector2(0, 4), rect.size), Color(0.25, 0.26, 0.23, 0.25), true, 12.0)
 	draw_rect(rect, fill, true, 12.0)
-	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.5 + 7), text, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 22, Color("#f1e9d8"))
+	draw_string(UI_FONT, rect.position + Vector2(0, rect.size.y * 0.5 + 7), text, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 22, Color("#f1e9d8"))
 
 func _draw_upgrade_overlay(size: Vector2) -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.12, 0.14, 0.13, 0.82))
-	draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.36), "將星突破", HORIZONTAL_ALIGNMENT_CENTER, size.x, 32, PAPER)
+	draw_string(UI_FONT, Vector2(0, size.y * 0.36), "將星突破", HORIZONTAL_ALIGNMENT_CENTER, size.x, 32, PAPER)
 	var card_w := minf(260.0, size.x * 0.28)
 	var total := card_w * 3.0 + 36.0
 	var left := (size.x - total) * 0.5
@@ -1064,15 +1065,15 @@ func _draw_upgrade_overlay(size: Vector2) -> void:
 		var rect := Rect2(Vector2(left + i * (card_w + 18.0), size.y * 0.51), Vector2(card_w, 150.0))
 		draw_rect(rect, Color("#d5ccb8"), true, 14.0)
 		draw_circle(rect.position + Vector2(card_w * 0.5, 42), 25.0, Color("#879680") if i != 1 else Color("#bd956d"))
-		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 91), upgrade_choices[i], HORIZONTAL_ALIGNMENT_CENTER, card_w, 21, INK)
-		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, 123), "點擊選擇", HORIZONTAL_ALIGNMENT_CENTER, card_w, 14, Color("#707064"))
+		draw_string(UI_FONT, rect.position + Vector2(0, 91), upgrade_choices[i], HORIZONTAL_ALIGNMENT_CENTER, card_w, 21, INK)
+		draw_string(UI_FONT, rect.position + Vector2(0, 123), "點擊選擇", HORIZONTAL_ALIGNMENT_CENTER, card_w, 14, Color("#707064"))
 
 func _draw_end(size: Vector2) -> void:
 	_draw_battlefield(size)
 	var is_win := mode == "victory"
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.12, 0.14, 0.13, 0.78))
-	draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.42), "此戰告捷" if is_win else "隊伍潰散", HORIZONTAL_ALIGNMENT_CENTER, size.x, 42, PAPER)
-	draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.51), "擊破 %d · 到達第 %d 級" % [kills, level], HORIZONTAL_ALIGNMENT_CENTER, size.x, 22, Color("#d4c8b1"))
+	draw_string(UI_FONT, Vector2(0, size.y * 0.42), "此戰告捷" if is_win else "隊伍潰散", HORIZONTAL_ALIGNMENT_CENTER, size.x, 42, PAPER)
+	draw_string(UI_FONT, Vector2(0, size.y * 0.51), "擊破 %d · 到達第 %d 級" % [kills, level], HORIZONTAL_ALIGNMENT_CENTER, size.x, 22, Color("#d4c8b1"))
 	_draw_button(Rect2(size.x * 0.5 - 130, size.y * 0.62, 260, 58), "返回大廳", MOSS)
 
 func draw_ellipse(center: Vector2, radius: Vector2, color: Color) -> void:
