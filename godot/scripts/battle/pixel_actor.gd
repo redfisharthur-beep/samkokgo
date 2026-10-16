@@ -55,11 +55,11 @@ func configure(id: String, actor_kind: String = "grunt") -> void:
 	animated.play("idle_front")
 	_initialized = false
 	if actor_kind == "boss":
-		scale = Vector2(1.55, 1.55)
+		scale = Vector2(1.9, 1.9)
 	elif actor_kind in ["grunt", "runner", "archer"]:
-		scale = Vector2(0.85, 0.85)
+		scale = Vector2(1.04, 1.04)
 	else:
-		scale = Vector2.ONE
+		scale = Vector2(1.26, 1.26)
 
 func _make_frames(texture: Texture2D) -> SpriteFrames:
 	var frames := SpriteFrames.new()

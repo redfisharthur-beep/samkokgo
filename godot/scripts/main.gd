@@ -165,12 +165,12 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 		if event is InputEventScreenTouch:
 			var exit_touch := event as InputEventScreenTouch
-			if exit_touch.pressed and Rect2(15.0, 91.0, 105.0, 51.0).has_point(exit_touch.position):
+			if exit_touch.pressed and Rect2(12.0, 100.0, 132.0, 48.0).has_point(exit_touch.position):
 				_leave_battle_to_web()
 				return
 		if event is InputEventMouseButton:
 			var exit_mouse := event as InputEventMouseButton
-			if exit_mouse.pressed and Rect2(15.0, 91.0, 105.0, 51.0).has_point(exit_mouse.position):
+			if exit_mouse.pressed and Rect2(12.0, 100.0, 132.0, 48.0).has_point(exit_mouse.position):
 				_leave_battle_to_web()
 				return
 	if mode == "battle" and not upgrade_choices.is_empty():
@@ -899,6 +899,8 @@ func _apply_game_state(state: Dictionary) -> void:
 			"max_hp": boss_max_hp if is_boss else float(enemy.get("maxHp", 42.0)),
 			"speed": 0.0,
 			"ranged": str(enemy.get("kind", "")) == "archer",
+			"kind": str(enemy.get("kind", "grunt")),
+			"elite": bool(enemy.get("elite", false)),
 			"boss": is_boss,
 			"scale": 2.15 if is_boss else 1.0,
 			"shot_clock": 9.0,

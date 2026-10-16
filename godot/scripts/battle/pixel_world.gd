@@ -5,6 +5,7 @@ extends Node2D
 const PIXEL_ACTOR_SCENE: PackedScene = preload("res://scenes/battle/pixel_actor.tscn")
 const TERRAIN: Texture2D = preload("res://assets/pixel/world/ground.svg")
 const PROPS: Texture2D = preload("res://assets/pixel/world/props.svg")
+const PICKUP: Texture2D = preload("res://assets/pixel/world/energy.svg")
 const TILE_SIZE := Vector2i(64, 32)
 const PROP_SIZE := Vector2i(96, 112)
 const HERO_IDS := ["liubei", "caocao", "sunquan", "lvbu"]
@@ -15,6 +16,7 @@ const MAX_ENEMIES := 64
 @onready var effects: Node2D = $Effects
 
 var actors: Dictionary = {}
+var pickups: Dictionary = {}
 var props: Array[Dictionary] = []
 var cloud_shift := Vector2.ZERO
 var _elapsed := 0.0
@@ -102,6 +104,28 @@ func refresh(main, delta: float) -> void:
 		var vital: Dictionary = main.player_vitals.get(id, {})
 		teammate.call("set_health", float(vital.get("hp", 100.0)), float(vital.get("maxHp", 100.0)), true)
 
+	var seen_pickups: Dictionary = {}
+	for pickup in main.drops:
+		var pickup_id := str(pickup.get("id", ""))
+		if pickup_id.is_empty():
+			continue
+		seen_pickups[pickup_id] = true
+		if not pickups.has(pickup_id):
+			var new_gem := Sprite2D.new()
+			new_gem.texture = PICKUP
+			new_gem.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			new_gem.scale = Vector2(1.22, 1.22)
+			depth.add_child(new_gem)
+			pickups[pickup_id] = new_gem
+		var gem: Sprite2D = pickups[pickup_id]
+		var gem_pos: Vector2 = pickup.get("pos", Vector2.ZERO)
+		gem.position = gem_pos + Vector2(0, -8.0 + sin(_elapsed * 3.6 + float(pickup_id.hash() % 20)) * 4.0)
+	for id in pickups.keys():
+		if not seen_pickups.has(id):
+			var old_gem: Sprite2D = pickups[id]
+			old_gem.queue_free()
+			pickups.erase(id)
+
 	var enemy_count := 0
 	for enemy in main.enemies:
 		if enemy_count >= MAX_ENEMIES:
@@ -109,7 +133,9 @@ func refresh(main, delta: float) -> void:
 		enemy_count += 1
 		var enemy_id := str(enemy.get("id", enemy_count))
 		var actor_id := "enemy_" + enemy_id
-		var enemy_kind := "boss" if bool(enemy.get("boss", false)) else ("archer" if bool(enemy.get("ranged", false)) else ("runner" if bool(enemy.get("elite", false)) else "grunt"))
+		var enemy_kind := "boss" if bool(enemy.get("boss", false)) else str(enemy.get("kind", "grunt"))
+		if enemy_kind not in ["boss", "archer", "runner", "grunt"]:
+			enemy_kind = "grunt"
 		var avatar := _ensure_actor(actor_id, enemy_kind)
 		existing[actor_id] = true
 		var next: Vector2 = enemy.get("pos", Vector2.ZERO)

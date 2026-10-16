@@ -101,7 +101,7 @@ func _draw_hud(size: Vector2) -> void:
 		_px(Rect2(Vector2(22, 20), Vector2(22, 22)), Color("#82927d"), 4)
 		_px(Rect2(Vector2(26, 22), Vector2(14, 11)), Color("#d8b38e"), 4)
 		_px(Rect2(Vector2(24, 20), Vector2(18, 6)), Color("#393c35"), 4)
-		_pixel_text(Vector2(55, 34), "劉備", 19, PIXEL_PAPER)
+		_pixel_text(Vector2(55, 34), str({"liubei":"劉備","caocao":"曹操","sunquan":"孫權","lvbu":"呂布"}.get(selected_hero_id, "劉備")), 19, PIXEL_PAPER)
 		var timer := int(maxf(0.0, 360.0 - elapsed))
 		_pixel_text(Vector2(size.x * 0.5 - 49, 35), "%02d:%02d" % [timer / 60, timer % 60], 25, PIXEL_GOLD, HORIZONTAL_ALIGNMENT_CENTER, 98)
 		_px(Rect2(Vector2(size.x - 48, 19), Vector2(24, 24)), Color("#728878"), 4)
@@ -126,7 +126,7 @@ func _draw_hud(size: Vector2) -> void:
 		_px(Rect2(left_rect.position + Vector2(17, 38), Vector2(32, 11)), Color("#695847"), 4)
 		_px(Rect2(left_rect.position + Vector2(24, 40), Vector2(18, 5)), Color("#a58a60"), 4)
 		var tx := left_rect.position.x + 68.0
-		_pixel_text(Vector2(tx, 37), "劉備", 23, PIXEL_PAPER)
+		_pixel_text(Vector2(tx, 37), str({"liubei":"劉備","caocao":"曹操","sunquan":"孫權","lvbu":"呂布"}.get(selected_hero_id, "劉備")), 23, PIXEL_PAPER)
 		_pixel_text(Vector2(tx + 77, 36), "Lv.%d" % level, 16, Color("#d8c397"))
 		_pixel_text(Vector2(tx, 58), "%d / %d" % [int(hp), int(max_hp)], 14, PIXEL_PAPER)
 		_pixel_bar(Rect2(Vector2(tx, 64), Vector2(left_rect.size.x - 81, 10)), hp / maxf(1.0, max_hp), PIXEL_RED)
@@ -158,7 +158,7 @@ func _draw_hud(size: Vector2) -> void:
 		var boss_rect := Rect2(Vector2(size.x * 0.30, bar_h + 16), Vector2(size.x * 0.40, 17))
 		_frame_panel(Rect2(boss_rect.position - Vector2(8, 21), boss_rect.size + Vector2(16, 30)), Color("#382f2b"))
 		_pixel_text(Vector2(boss_rect.position.x, boss_rect.position.y - 5), "董卓", 17, PIXEL_PAPER, HORIZONTAL_ALIGNMENT_CENTER, boss_rect.size.x)
-		_pixel_bar(boss_rect, boss_hp / 1600.0, PIXEL_RED)
+		_pixel_bar(boss_rect, boss_hp / maxf(1.0, boss_max_hp), PIXEL_RED)
 
 func _frame_panel(rect: Rect2, fill: Color) -> void:
 	# Layered pixel edging echoes the lobby frame and keeps text readable.
