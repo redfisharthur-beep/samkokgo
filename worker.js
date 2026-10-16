@@ -14,26 +14,66 @@ export default {
       return hub.fetch(request);
     }
     if (url.pathname === "/index.wasm") {
-      const assetHeaders = new Headers();
-      assetHeaders.set("accept-encoding", "identity");
-      const compressedAsset = await env.ASSETS.fetch(
-        new Request(new URL("/index.wasm.br", request.url), { headers: assetHeaders })
-      );
-      if (!compressedAsset.ok) return compressedAsset;
-      const headers = new Headers(compressedAsset.headers);
-      headers.set("content-type", "application/wasm");
-      headers.set("content-encoding", "br");
-      headers.set("cache-control", "public, max-age=31536000, immutable");
-      headers.set("vary", "accept-encoding");
-      return new Response(compressedAsset.body, {
-        status: compressedAsset.status,
-        statusText: compressedAsset.statusText,
-        headers
-      });
+      return serveWasm(env, request.url);
     }
     return env.ASSETS.fetch(request);
   }
 };
+
+async function serveWasm(env, requestUrl) {
+  const assetHeaders = new Headers({ "accept-encoding": "identity" });
+  const manifestResponse = await env.ASSETS.fetch(
+    new Request(new URL("/index.wasm.parts.json", requestUrl), { headers: assetHeaders })
+  );
+  if (!manifestResponse.ok) return new Response("WebAssembly parts are unavailable.", { status: 503 });
+
+  let manifest;
+  try {
+    manifest = await manifestResponse.json();
+  } catch {
+    return new Response("WebAssembly manifest is invalid.", { status: 503 });
+  }
+  if (!Number.isSafeInteger(manifest.size) || !Array.isArray(manifest.parts) ||
+      manifest.parts.length < 1 || manifest.parts.length > 8) {
+    return new Response("WebAssembly manifest is invalid.", { status: 503 });
+  }
+
+  const responses = await Promise.all(manifest.parts.map((path) =>
+    env.ASSETS.fetch(new Request(new URL(path, requestUrl), { headers: assetHeaders }))
+  ));
+  if (responses.some((response) => !response.ok || !response.body ||
+      response.headers.get("content-type")?.includes("text/html"))) {
+    return new Response("A WebAssembly part could not be loaded.", { status: 503 });
+  }
+
+  const body = new ReadableStream({
+    async start(controller) {
+      let totalBytes = 0;
+      try {
+        for (const response of responses) {
+          const reader = response.body.getReader();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            totalBytes += value.byteLength;
+            controller.enqueue(value);
+          }
+        }
+        if (totalBytes !== manifest.size) throw new Error("WebAssembly size mismatch");
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      }
+    }
+  });
+  return new Response(body, {
+    headers: {
+      "content-type": "application/wasm",
+      "content-length": String(manifest.size),
+      "cache-control": "public, max-age=0, must-revalidate"
+    }
+  });
+}
 
 /**
  * A single lobby object is enough for the first small-scale prototype.
