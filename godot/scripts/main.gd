@@ -202,6 +202,11 @@ func _start_battle(_send_room_start: bool = false) -> void:
 	damage = 20.0
 	attack_interval = 0.9
 	attack_range = 380.0
+	move_speed = 255.0
+	sync_clock = 0.0
+	_sync_clock = 0.0
+	next_enemy_id = 1
+	next_pickup_id = 1
 	boss_spawned = false
 	boss_hp = 0.0
 	enemies.clear()
