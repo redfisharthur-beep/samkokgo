@@ -23,3 +23,5 @@ Room snapshots contain `room` and `players[]`; rooms now include `ruleset`, `pro
 - Production is the existing `main` branch, Worker `samkokgo`; it is not modified by this integration commit.
 - Godot 4.3 preview builds from `godot4-integration`, Worker `samkokgo-godot-preview`, using `wrangler.godot-preview.toml`. This prevents auto-overwriting production.
 - The preview Action requires repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. A passing Action and online test are still required to confirm deployment.
+
+The `godot4-integration` branch's default `wrangler.toml` also targets `samkokgo-browser-preview` for manual `npm run deploy` commands, preventing a local deploy from overwriting production. The two preview Workers have independent Durable Object storage and cannot share room IDs until explicitly moved to one common service.

@@ -36,3 +36,9 @@ test("preview Worker cannot be confused with production", () => {
   assert.ok(config.includes('name = "samkokgo-godot-preview"'));
   assert.ok(!config.includes('name = "samkokgo"'));
 });
+
+test("manual branch deploy also cannot overwrite production", () => {
+  const config = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
+  assert.ok(config.includes('name = "samkokgo-browser-preview"'));
+  assert.ok(!config.includes('name = "samkokgo"'));
+});
