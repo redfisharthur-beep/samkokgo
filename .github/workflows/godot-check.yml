@@ -31,3 +31,6 @@ jobs:
 
       - name: Import and parse Godot project
         run: /tmp/godot/Godot_v4.3-stable_linux.x86_64 --headless --editor --path godot --quit
+
+      - name: Launch prototype in headless mode
+        run: /tmp/godot/Godot_v4.3-stable_linux.x86_64 --headless --path godot --quit-after 3
