@@ -30,6 +30,12 @@ export class GameHub extends DurableObject {
 
   async fetch(request) {
     const url = new URL(request.url);
+    // Godot sends an empty JSON body with room-creation and quick-join POSTs.
+    // Consume bodies these routes do not use before returning a response; workerd
+    // reports an exception if a Durable Object leaves the request body unread.
+    if ((url.pathname === "/api/create" || url.pathname === "/api/quick-join") && request.body) {
+      await request.arrayBuffer();
+    }
     if (url.pathname === "/api/rooms" && request.method === "GET") {
       return json({ rooms: await this.listRooms() });
     }
