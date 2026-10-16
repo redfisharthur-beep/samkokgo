@@ -12,6 +12,8 @@ on:
     branches: [main]
     paths:
       - "godot/**"
+      - "worker.js"
+      - "public/main.js"
       - ".github/workflows/godot-check.yml"
   workflow_dispatch:
 
