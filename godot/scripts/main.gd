@@ -45,6 +45,8 @@ var room_connected := false
 var sync_clock := 0.0
 var _sync_clock := 0.0
 var next_enemy_id := 1
+var next_pickup_id := 1
+var move_speed := 255.0
 
 func _ready() -> void:
 	player_pos = get_viewport_rect().size * 0.5
@@ -57,7 +59,7 @@ func _process(delta: float) -> void:
 	if mode != "battle":
 		queue_redraw()
 		return
-	if not upgrade_choices.is_empty():
+	if not upgrade_choices.is_empty() and not room_connected:
 		queue_redraw()
 		return
 
@@ -73,7 +75,7 @@ func _process(delta: float) -> void:
 	var direction := move_vector
 	if keys.length() > 0.1:
 		direction = keys.normalized()
-	player_pos += direction * 255.0 * delta
+	player_pos += direction * move_speed * delta
 	var bounds := get_viewport_rect().size
 	player_pos.x = clampf(player_pos.x, 50.0, bounds.x - 50.0)
 	player_pos.y = clampf(player_pos.y, 125.0, bounds.y - 50.0)
@@ -106,6 +108,8 @@ func _process(delta: float) -> void:
 			if _sync_clock >= 0.25:
 				_sync_clock = 0.0
 				_publish_game_state()
+	else:
+		_update_remote_drops()
 	_update_projectiles(delta)
 	_update_particles(delta)
 
@@ -338,14 +342,10 @@ func _update_drops(delta: float) -> void:
 		var drop: Dictionary = drops[i]
 		var pos: Vector2 = drop["pos"]
 		if pos.distance_to(player_pos) < 26.0:
-			xp += int(drop["value"])
-			_emit_particles(pos, JADE, 7, 100.0)
 			drops.remove_at(i)
-			if xp >= xp_goal:
-				xp -= xp_goal
-				level += 1
-				xp_goal = 5 + level * 3
-				_open_upgrade()
+			_add_team_xp(int(drop["value"]))
+			_emit_particles(pos, JADE, 7, 100.0)
+			if not upgrade_choices.is_empty():
 				return
 		else:
 			var direction := player_pos - pos
@@ -353,6 +353,33 @@ func _update_drops(delta: float) -> void:
 				pos += direction.normalized() * 170.0 * delta
 			drop["pos"] = pos
 			drops[i] = drop
+
+func _add_team_xp(amount: int) -> void:
+	xp += amount
+	while xp >= xp_goal:
+		xp -= xp_goal
+		level += 1
+		xp_goal = 5 + level * 3
+		_open_upgrade()
+
+func _collect_shared_pickup(pickup_id: String) -> void:
+	for i in range(drops.size()):
+		if str(drops[i].get("id", "")) == pickup_id:
+			var pos: Vector2 = drops[i]["pos"]
+			drops.remove_at(i)
+			_add_team_xp(1)
+			_emit_particles(pos, JADE, 10, 120.0)
+			return
+
+func _update_remote_drops() -> void:
+	for i in range(drops.size() - 1, -1, -1):
+		var drop: Dictionary = drops[i]
+		if player_pos.distance_to(Vector2(drop["pos"])) < 27.0:
+			var pickup_id := str(drop.get("id", ""))
+			if not pickup_id.is_empty():
+				network.send_action({"type": "player-pickup", "pickupId": pickup_id})
+			_emit_particles(drop["pos"], JADE, 8, 100.0)
+			drops.remove_at(i)
 
 func _open_upgrade() -> void:
 	var all := ["長槍淬鋒", "輕身步法", "青囊護心", "連弩機括"]
@@ -364,11 +391,18 @@ func _open_upgrade() -> void:
 func _choose_upgrade(index: int) -> void:
 	if index < 0 or index >= upgrade_choices.size():
 		return
-	match upgrade_choices[index]:
+	var chosen := upgrade_choices[index]
+	upgrade_choices.clear()
+	_apply_upgrade_label(chosen)
+	if room_connected and is_host:
+		network.send_action({"type": "level-choice", "upgradeId": _upgrade_id_for_label(chosen)})
+
+func _apply_upgrade_label(label: String) -> void:
+	match label:
 		"長槍淬鋒":
 			damage *= 1.28
 		"輕身步法":
-			pass
+			move_speed *= 1.14
 		"青囊護心":
 			max_hp += 24.0
 			hp = minf(max_hp, hp + 36.0)
@@ -379,7 +413,20 @@ func _choose_upgrade(index: int) -> void:
 			attack_range += 55.0
 			max_hp += 30.0
 			hp = minf(max_hp, hp + 50.0)
-	upgrade_choices.clear()
+
+func _upgrade_id_for_label(label: String) -> String:
+	match label:
+		"長槍淬鋒": return "power"
+		"連弩機括": return "tempo"
+		"神兵覺醒": return "reach"
+		_: return "speed"
+
+func _apply_upgrade_id(upgrade_id: String) -> void:
+	match upgrade_id:
+		"power": _apply_upgrade_label("長槍淬鋒")
+		"tempo": _apply_upgrade_label("連弩機括")
+		"reach": _apply_upgrade_label("神兵覺醒")
+		"speed": _apply_upgrade_label("輕身步法")
 
 func _choice_at(pos: Vector2) -> int:
 	var size := get_viewport_rect().size
@@ -446,6 +493,12 @@ func _on_room_event(event: Dictionary) -> void:
 	elif kind == "player-attack":
 		if is_host:
 			_apply_remote_attack(event)
+	elif kind == "player-pickup":
+		if is_host:
+			_collect_shared_pickup(str(event.get("pickupId", "")))
+	elif kind == "level-choice":
+		if not is_host:
+			_apply_upgrade_id(str(event.get("upgradeId", "")))
 	queue_redraw()
 
 func _update_room_players(players: Array) -> void:
@@ -491,8 +544,13 @@ func _publish_game_state() -> void:
 			"kind": "boss" if enemy["boss"] else ("archer" if enemy["ranged"] else "grunt")
 		})
 	for i in range(mini(drops.size(), 20)):
-		var world := _screen_to_world(drops[i]["pos"])
-		state_pickups.append({"id": "p-%d" % i, "x": world.x, "z": world.y, "type": "energy"})
+		var drop: Dictionary = drops[i]
+		if not drop.has("id"):
+			drop["id"] = "p-%d" % next_pickup_id
+			next_pickup_id += 1
+			drops[i] = drop
+		var world := _screen_to_world(drop["pos"])
+		state_pickups.append({"id": str(drop["id"]), "x": world.x, "z": world.y, "type": "energy"})
 	var boss_state: Variant = null
 	if boss_spawned and boss_hp > 0.0:
 		boss_state = {"hp": boss_hp, "maxHp": 1600, "bossIndex": 0}
@@ -537,11 +595,13 @@ func _apply_game_state(state: Dictionary) -> void:
 		if not value is Dictionary:
 			continue
 		drops.append({
+			"id": str(value.get("id", "")),
 			"pos": _world_to_screen(Vector2(float(value.get("x", 0.0)), float(value.get("z", 0.0)))),
 			"value": 1
 		})
 	xp = int(state.get("xp", xp))
 	level = int(state.get("level", level))
+	xp_goal = 5 + level * 3
 
 func _screen_to_world(pos: Vector2) -> Vector2:
 	var size := get_viewport_rect().size
