@@ -5,6 +5,8 @@ on:
     branches: [godot4-integration]
     paths:
       - "godot/**"
+      - "worker.js"
+      - "public/main.js"
       - ".github/workflows/godot-check.yml"
   pull_request:
     branches: [main]
@@ -19,6 +21,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Check Worker and browser JavaScript
+        run: node --check worker.js && node --check public/main.js
 
       - name: Install Godot 4.3 headless
         shell: bash
