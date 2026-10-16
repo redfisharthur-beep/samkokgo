@@ -7,9 +7,11 @@ on:
       - "godot/**"
       - "public/**"
       - "shared/**"
+      - "tests/**"
+      - "package.json"
       - "worker.js"
       - "wrangler.godot-preview.toml"
-      - ".github/workflows/deploy-godot-production.yml"
+      - ".github/workflows/deploy-godot-preview.yml"
   workflow_dispatch:
 
 permissions:
