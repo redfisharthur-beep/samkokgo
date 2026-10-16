@@ -42,6 +42,9 @@ test("Godot keyboard and joystick both supply direction to server movement", asy
   const src = readFileSync(new URL("../godot/scripts/main.gd", import.meta.url), "utf8");
   assert.match(src, /network_direction := keys\.normalized\(\) if keys\.length\(\) > 0\.1 else move_vector/);
   assert.match(src, /send_input\(network_direction\.x, network_direction\.y/);
+  assert.match(src, /func _clear_mouse_movement\(\)/);
+  assert.match(src, /func _clear_movement_input\(\)/);
+  assert.match(src, /if what in \[NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_WM_WINDOW_FOCUS_OUT\]/);
 });
 
 test("boss spawn remains guaranteed even when enemy slots are full", () => {

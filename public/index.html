@@ -75,9 +75,18 @@
         <div class="room-status" id="roomStatus" aria-live="polite"></div>
         <div class="roster" id="roster"></div><p class="roster-caption">同袍集結中 · 最多六人合作</p>
         <div class="room-config" id="roomConfig" aria-label="房間設定">
-          <button class="config-button" id="mapSelect" aria-label="切換地圖" title="地圖"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="m4 10 10-5 12 5 10-5v25l-10 5-12-5-10 5V10ZM14 5v25m12-20v25M7 14h4M17 15l6 3M29 16l4-3"/></svg><span>地圖</span></button>
-          <button class="config-button" id="difficultySelect" aria-label="切換難度" title="難度"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 4 36 34H4L20 4ZM20 15v9m0 5v1"/></svg><span>難度</span></button>
-          <button class="config-button" id="sizeSelect" aria-label="切換人數上限" title="人數"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="14" cy="13" r="5"/><circle cx="27" cy="14" r="4"/><path d="M4 33c0-7 4-11 10-11s10 4 10 11M24 24c6-3 12 1 12 8"/></svg><span>人數</span></button>
+          <button class="config-button" id="mapSelect" aria-label="切換地圖" title="地圖">
+            <svg viewBox="0 0 40 40" aria-hidden="true"><path d="m4 10 10-5 12 5 10-5v25l-10 5-12-5-10 5V10ZM14 5v25m12-20v25M7 14h4M17 15l6 3M29 16l4-3"/></svg>
+            <span class="config-copy"><small>戰場地圖</small><b id="mapValue">山林</b></span><span class="config-chevron" aria-hidden="true">›</span>
+          </button>
+          <button class="config-button" id="difficultySelect" aria-label="切換難度" title="難度">
+            <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 4 36 34H4L20 4ZM20 15v9m0 5v1"/></svg>
+            <span class="config-copy"><small>戰鬥難度</small><b id="difficultyValue">普通</b></span><span class="config-chevron" aria-hidden="true">›</span>
+          </button>
+          <button class="config-button" id="sizeSelect" aria-label="切換人數上限" title="人數">
+            <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="14" cy="13" r="5"/><circle cx="27" cy="14" r="4"/><path d="M4 33c0-7 4-11 10-11s10 4 10 11M24 24c6-3 12 1 12 8"/></svg>
+            <span class="config-copy"><small>隊伍人數</small><b id="sizeValue">6 人</b></span><span class="config-chevron" aria-hidden="true">›</span>
+          </button>
         </div>
         <div class="room-actions">
           <button class="round-button" id="inviteButton" aria-label="複製邀請連結" title="邀請">

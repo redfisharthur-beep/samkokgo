@@ -42,3 +42,17 @@ test("UI is responsive and retains battle state networking", () => {
   assert.match(godot, /ability_ready_at/);
   assert.match(godot, /boss_max_hp/);
 });
+test("room setup shows the selected map, difficulty, and party size", () => {
+  for (const id of ["mapValue", "difficultyValue", "sizeValue"]) {
+    assert.match(html, new RegExp('id="' + id + '"'));
+  }
+  assert.match(js, /\$\("difficultyValue"\)\.textContent = difficultyName/);
+  assert.match(js, /\$\("mapValue"\)\.textContent = mapName/);
+  assert.match(css, /\.room-config \{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+});
+test("lost mouse or window focus always stops browser movement", () => {
+  assert.match(js, /const clearMovementInput = \(event = null\) =>/);
+  assert.match(js, /appState\.moveCurrent = \{ x: 0, z: 0 \}/);
+  assert.match(js, /window\.addEventListener\("blur", \(\) => clearMovementInput\(\)\)/);
+  assert.match(js, /document\.addEventListener\("visibilitychange"/);
+});

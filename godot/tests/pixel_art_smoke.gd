@@ -53,7 +53,52 @@ func _verify() -> void:
 		push_error("Depth props / Y-sort missing")
 		quit(1)
 		return
-	print("PIXEL ART SMOKE PASS: premium 16:9 battlefield, 4 upgraded hero atlases, 3 upgraded enemy atlases, 8 animated actor types, 6 action/facing rows, 4 frames each, isometric tilemap and depth props.")
+	var main_scene: PackedScene = load("res://scenes/main.tscn")
+	var main_node: Control = main_scene.instantiate()
+	root.add_child(main_node)
+	await process_frame
+	main_node.call("_start_battle")
+	var mouse_press := InputEventMouseButton.new()
+	mouse_press.button_index = MOUSE_BUTTON_LEFT
+	mouse_press.pressed = true
+	mouse_press.position = Vector2(400, 300)
+	main_node.call("_unhandled_input", mouse_press)
+	var mouse_drag := InputEventMouseMotion.new()
+	mouse_drag.position = Vector2(440, 330)
+	main_node.call("_unhandled_input", mouse_drag)
+	if Vector2(main_node.get("move_vector")).length() < 0.1:
+		push_error("Mouse drag did not start movement")
+		quit(1)
+		return
+	var mouse_release := InputEventMouseButton.new()
+	mouse_release.button_index = MOUSE_BUTTON_LEFT
+	mouse_release.pressed = false
+	mouse_release.position = mouse_drag.position
+	main_node.call("_unhandled_input", mouse_release)
+	if Vector2(main_node.get("move_vector")).length() > 0.001:
+		push_error("Mouse release left movement stuck")
+		quit(1)
+		return
+	for keycode in [KEY_D, KEY_S]:
+		var key_down := InputEventKey.new()
+		key_down.keycode = keycode
+		key_down.pressed = true
+		main_node.call("_unhandled_input", key_down)
+	var key_up := InputEventKey.new()
+	key_up.keycode = KEY_S
+	key_up.pressed = false
+	main_node.call("_unhandled_input", key_up)
+	if Vector2(main_node.get("keys")) != Vector2.RIGHT:
+		push_error("Releasing one movement key incorrectly cleared another held key")
+		quit(1)
+		return
+	main_node.notification(NOTIFICATION_APPLICATION_FOCUS_OUT)
+	if Vector2(main_node.get("keys")) != Vector2.ZERO or Vector2(main_node.get("move_vector")) != Vector2.ZERO:
+		push_error("Losing focus did not clear movement input")
+		quit(1)
+		return
+	print("PIXEL ART / INPUT SMOKE PASS: premium battlefield, hero/enemy animation atlases, mouse release stop, independent keys and focus-loss reset.")
 	world.queue_free()
 	avatar.queue_free()
+	main_node.queue_free()
 	quit(0)

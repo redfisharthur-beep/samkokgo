@@ -252,3 +252,84 @@ html,body,#app { background: #102e46; color: #f8ebca; }
   min-height:0;
   pointer-events:auto;
 }
+
+/* One clear lobby hierarchy: party first, settings second, launch last. */
+.room-screen::before {
+  top: 50%; width: min(1120px, 94vw); height: min(780px, 90vh);
+  background: linear-gradient(145deg, rgba(16,39,53,.9), rgba(20,32,39,.92));
+  border: 3px solid #d6ad70;
+  box-shadow: inset 0 0 0 4px #39434a, 0 12px 0 rgba(13,25,30,.55);
+}
+.room-banner { top: 6.5%; }
+.room-banner p { margin-bottom: 3px; }
+.room-banner h1 { margin: 0 0 5px; font-size: clamp(26px, 4vh, 40px); }
+.room-banner span { display: inline-block; min-width: 210px; }
+.room-status { top: 21%; width: 148px; height: 30px; }
+.room-status::before { top: 9px; }
+.room-status::after { top: 12px; width: 32px; }
+.roster { top: 39%; width: min(82vw, 790px); gap: clamp(8px, 1.35vw, 18px); }
+.roster-slot {
+  width: clamp(72px, 9vw, 116px); height: clamp(100px, 14vh, 136px);
+  aspect-ratio: auto; padding: 8px 5px;
+}
+.roster-avatar { width: auto; height: 70%; max-width: 86%; object-fit: contain; }
+.roster-caption { top: 54%; }
+.room-config {
+  top: 67%; width: min(720px, 82vw); display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px;
+}
+.room-config .config-button {
+  width: 100%; height: 78px; min-width: 0; padding: 9px 11px;
+  display: grid; grid-template-columns: 30px minmax(0, 1fr) 12px;
+  align-items: center; gap: 9px; text-align: left;
+  border: 2px solid #bda06a; color: #fff0d0;
+  background: linear-gradient(180deg, #334d58, #1d3440);
+  box-shadow: inset 0 0 0 2px rgba(233,212,168,.11), 0 4px 0 #17252b;
+}
+.room-config .config-button:disabled { opacity: .84; }
+.room-config .config-button svg { width: 27px; height: 27px; min-width: 0; color: #f1cf83; }
+.config-copy { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.config-copy small { color: #d6c39c; font-size: 11px; font-weight: 700; line-height: 1.2; }
+.config-copy b { color: #fff3d7; font-size: clamp(14px, 1.45vw, 18px); line-height: 1.25; }
+.config-chevron { color: #f2cf83; font: 700 23px/1 Georgia, serif; }
+#difficultySelect[data-difficulty="easy"] .config-copy b { color: #b9d7a7; }
+#difficultySelect[data-difficulty="hard"] .config-copy b { color: #ffb19c; }
+.room-actions { bottom: 4.5%; gap: clamp(10px, 1.5vw, 20px); }
+.room-actions .round-button { height: 58px; min-width: clamp(125px, 15vw, 176px); }
+.room-actions .primary-action { min-width: clamp(175px, 20vw, 232px); }
+.room-actions .round-button::after { font-size: clamp(11px, 1.15vw, 15px); }
+
+@media (max-width: 760px) and (orientation: landscape) {
+  .room-screen::before { width: 96vw; height: 94vh; }
+  .room-banner { top: 3%; }
+  .room-banner p { display: none; }
+  .room-banner h1 { font-size: clamp(22px, 4.4vh, 32px); }
+  .room-banner span { min-width: 170px; font-size: 11px; }
+  .room-status { top: 19%; }
+  .roster { top: 39%; width: 80vw; }
+  .roster-slot { width: 10vw; height: 15vh; min-height: 76px; padding: 4px; }
+  .roster-caption { top: 55%; font-size: 11px; }
+  .room-config { top: 70%; width: 87vw; gap: 7px; }
+  .room-config .config-button { height: 56px; padding: 5px; grid-template-columns: 22px minmax(0,1fr) 8px; gap: 5px; }
+  .room-config .config-button svg { width: 21px; height: 21px; }
+  .config-copy small { font-size: 9px; }
+  .config-copy b { font-size: 12px; }
+  .room-actions { bottom: 2.5%; }
+  .room-actions .round-button { height: 42px; min-width: 102px; padding: 4px 8px; }
+  .room-actions .primary-action { min-width: 145px; }
+}
+@media (max-width: 560px) and (orientation: portrait) {
+  .room-screen::before { width: 94vw; height: 82vh; }
+  .room-banner { top: 7%; }
+  .roster { top: 38%; width: 88vw; gap: 5px; }
+  .roster-slot { width: 13vw; height: 105px; }
+  .room-config { top: 63%; width: 84vw; gap: 6px; }
+  .room-config .config-button { height: 68px; padding: 5px; grid-template-columns: 1fr; gap: 2px; justify-items: center; text-align: center; }
+  .room-config .config-button svg, .config-chevron, .roster-caption { display: none; }
+  .config-copy { align-items: center; }
+  .config-copy small { font-size: 9px; }
+  .config-copy b { font-size: 13px; }
+  .room-actions { bottom: 10%; gap: 7px; }
+  .room-actions .round-button { min-width: 96px; height: 48px; padding: 5px; }
+  .room-actions .primary-action { min-width: 132px; }
+}

@@ -21,6 +21,8 @@ var move_origin := Vector2.ZERO
 var move_vector := Vector2.ZERO
 var moving_touch := -1
 var keys := Vector2.ZERO
+var held_movement_keys: Dictionary = {}
+var moving_mouse := false
 var elapsed := 0.0
 var attack_clock := 0.0
 var spawn_clock := 0.0
@@ -184,10 +186,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		var key := event as InputEventKey
 		if crossplay_mode and mode == "battle" and key.pressed and not key.echo and key.keycode == KEY_SPACE:
 			network.send_action({"type": "ability"})
-		if key.keycode in [KEY_W, KEY_UP]: keys.y = -1.0 if key.pressed else 0.0
-		if key.keycode in [KEY_S, KEY_DOWN]: keys.y = 1.0 if key.pressed else 0.0
-		if key.keycode in [KEY_A, KEY_LEFT]: keys.x = -1.0 if key.pressed else 0.0
-		if key.keycode in [KEY_D, KEY_RIGHT]: keys.x = 1.0 if key.pressed else 0.0
+		if key.keycode in [KEY_W, KEY_A, KEY_S, KEY_D, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]:
+			if key.pressed:
+				held_movement_keys[key.keycode] = true
+			else:
+				held_movement_keys.erase(key.keycode)
+			_refresh_keyboard_direction()
 
 	if event is InputEventScreenTouch:
 		var touch := event as InputEventScreenTouch
@@ -217,18 +221,44 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event is InputEventMouseButton:
 		var mouse := event as InputEventMouseButton
-		if mouse.pressed:
-			if crossplay_mode and mode == "battle" and mouse.button_index == MOUSE_BUTTON_LEFT and mouse.position.distance_to(Vector2(get_viewport_rect().size.x - 90.0, get_viewport_rect().size.y - 90.0)) < 48.0:
-				if ability_ready_at <= Time.get_unix_time_from_system() * 1000.0:
-					network.send_action({"type": "ability"})
-				return
-			if mode == "lobby":
-				_handle_lobby_click(mouse.position)
-			elif mode in ["victory", "defeat"]:
-				mode = "lobby"
-
-	if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and mode == "battle":
+		if mouse.button_index == MOUSE_BUTTON_LEFT:
+			if mouse.pressed:
+				if crossplay_mode and mode == "battle" and mouse.position.distance_to(Vector2(get_viewport_rect().size.x - 90.0, get_viewport_rect().size.y - 90.0)) < 48.0:
+					if ability_ready_at <= Time.get_unix_time_from_system() * 1000.0:
+						network.send_action({"type": "ability"})
+					return
+				if mode == "lobby":
+					_handle_lobby_click(mouse.position)
+				elif mode == "battle" and upgrade_choices.is_empty() and mouse.position.y >= 100.0:
+					moving_mouse = true
+					move_origin = mouse.position
+					move_vector = Vector2.ZERO
+				elif mode in ["victory", "defeat"]:
+					mode = "lobby"
+			else:
+				_clear_mouse_movement()
+	if event is InputEventMouseMotion and moving_mouse and mode == "battle":
 		_update_stick((event as InputEventMouseMotion).position)
+
+func _refresh_keyboard_direction() -> void:
+	var up := held_movement_keys.has(KEY_W) or held_movement_keys.has(KEY_UP)
+	var down := held_movement_keys.has(KEY_S) or held_movement_keys.has(KEY_DOWN)
+	var left := held_movement_keys.has(KEY_A) or held_movement_keys.has(KEY_LEFT)
+	var right := held_movement_keys.has(KEY_D) or held_movement_keys.has(KEY_RIGHT)
+	keys = Vector2(float(right) - float(left), float(down) - float(up))
+
+func _clear_mouse_movement() -> void:
+	moving_mouse = false
+	move_vector = Vector2.ZERO
+
+func _clear_movement_input() -> void:
+	held_movement_keys.clear()
+	keys = Vector2.ZERO
+	moving_touch = -1
+	_clear_mouse_movement()
+	if room_connected and crossplay_mode:
+		var world_pos := _screen_to_world(player_pos)
+		network.send_input(0.0, 0.0, world_pos.x, world_pos.y)
 
 func _update_stick(pos: Vector2) -> void:
 	var offset := pos - move_origin
@@ -280,7 +310,7 @@ func _start_battle(_send_room_start: bool = false) -> void:
 	particles.clear()
 	player_vitals.clear()
 	player_pos = get_viewport_rect().size * 0.5
-	move_vector = Vector2.ZERO
+	_clear_movement_input()
 	if room_connected:
 		_ensure_vital(network.self_id)
 		for teammate in remote_players:
@@ -1209,3 +1239,5 @@ func draw_ellipse(center: Vector2, radius: Vector2, color: Color) -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		network.leave_room()
+	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_WM_WINDOW_FOCUS_OUT]:
+		_clear_movement_input()
