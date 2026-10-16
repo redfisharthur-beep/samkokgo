@@ -69,7 +69,7 @@ func _make_frames(texture: Texture2D) -> SpriteFrames:
 	for action_index in range(actions.size()):
 		for facing_index in range(2):
 			var face := "front" if facing_index == 0 else "back"
-			var name := actions[action_index] + "_" + face
+			var name: String = str(actions[action_index]) + "_" + face
 			frames.add_animation(name)
 			frames.set_animation_loop(name, action_index != 2)
 			frames.set_animation_speed(name, 4.0 if action_index == 0 else (9.0 if action_index == 1 else 12.0))

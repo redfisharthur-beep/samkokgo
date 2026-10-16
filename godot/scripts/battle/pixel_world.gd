@@ -70,7 +70,7 @@ func _create_props() -> void:
 		depth.add_child(picture)
 		props.append({"node": picture, "anchor": Vector2(ix, iy)})
 
-func refresh(main: Control, delta: float) -> void:
+func refresh(main, delta: float) -> void:
 	if not _ready_for_state:
 		return
 	_elapsed += delta
@@ -83,9 +83,9 @@ func refresh(main: Control, delta: float) -> void:
 	var existing: Dictionary = {}
 	var me := _ensure_actor("self", main.selected_hero_id)
 	existing["self"] = true
-	me.downed = main._local_is_down()
-	me.set_visual_position(main.player_pos, delta)
-	me.set_health(main.hp, main.max_hp, false)
+	me.set("downed", main._local_is_down())
+	me.call("set_visual_position", main.player_pos, delta)
+	me.call("set_health", main.hp, main.max_hp, false)
 
 	for player in main.remote_players:
 		var id := str(player.get("id", ""))
@@ -97,10 +97,10 @@ func refresh(main: Control, delta: float) -> void:
 		var teammate := _ensure_actor("teammate_" + id, hero)
 		existing["teammate_" + id] = true
 		var pos: Vector2 = main._teammate_screen_position(player)
-		teammate.downed = bool(main.player_vitals.get(id, {}).get("downed", false))
-		teammate.set_visual_position(pos, delta)
+		teammate.set("downed", bool(main.player_vitals.get(id, {}).get("downed", false)))
+		teammate.call("set_visual_position", pos, delta)
 		var vital: Dictionary = main.player_vitals.get(id, {})
-		teammate.set_health(float(vital.get("hp", 100.0)), float(vital.get("maxHp", 100.0)), true)
+		teammate.call("set_health", float(vital.get("hp", 100.0)), float(vital.get("maxHp", 100.0)), true)
 
 	var enemy_count := 0
 	for enemy in main.enemies:
@@ -113,13 +113,13 @@ func refresh(main: Control, delta: float) -> void:
 		var avatar := _ensure_actor(actor_id, enemy_kind)
 		existing[actor_id] = true
 		var next: Vector2 = enemy.get("pos", Vector2.ZERO)
-		avatar.set_visual_position(next, delta)
+		avatar.call("set_visual_position", next, delta)
 		var hp := float(enemy.get("hp", 1.0))
-		avatar.set_health(hp, float(enemy.get("max_hp", 20.0)), true)
+		avatar.call("set_health", hp, float(enemy.get("max_hp", 20.0)), true)
 		if _last_health.has(actor_id) and hp < float(_last_health[actor_id]):
 			_spawn_hit(next)
 			if main.player_pos.distance_to(next) < 280.0:
-				me.play_attack()
+				me.call("play_attack")
 		_last_health[actor_id] = hp
 
 	for id in actors.keys():
@@ -134,12 +134,12 @@ func refresh(main: Control, delta: float) -> void:
 func _ensure_actor(id: String, kind: String) -> Node2D:
 	if actors.has(id):
 		var existing: Node2D = actors[id]
-		if existing.kind != kind:
-			existing.configure(id, kind)
+		if str(existing.get("kind")) != kind:
+			existing.call("configure", id, kind)
 		return existing
 	var actor: Node2D = PIXEL_ACTOR_SCENE.instantiate()
 	depth.add_child(actor)
-	actor.configure(id, kind)
+	actor.call("configure", id, kind)
 	actors[id] = actor
 	return actor
 
