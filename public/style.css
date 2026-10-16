@@ -168,3 +168,9 @@ button { font: inherit; color: inherit; }
   .level-track { top: 80px; }
   .boss-health { top: 96px; width: min(280px, 52vw); }
 }
+
+/* Web-based settlement: one home, one lobby, one end screen. */
+.result-copy { position: absolute; left: 50%; top: 52%; width: min(84vw, 440px);
+  transform: translateX(-50%); color: var(--ink); text-align: center; }
+.result-copy h1 { margin: 0; font-size: clamp(24px, 4.3vw, 36px); letter-spacing: .12em; }
+.result-copy p { margin: 9px 0 0; font-size: clamp(13px, 2vw, 16px); line-height: 1.6; }

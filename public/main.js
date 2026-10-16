@@ -1,4 +1,5 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
+import { godotBattlePath, handoffKey, acceptedResult } from "/lobby-flow.mjs";
 
 const COLORS = [0x77877d, 0xb67b6d, 0x8097a0, 0xb49b6e, 0x8e8290, 0x68766b];
 const HEROES = {
@@ -116,7 +117,7 @@ const appState = {
   nextPlayerAttacks: new Map(), energy: 0, abilityPending: false,
   nextTeamHit: 0, bursts: [], toastTimer: 0, pickupSequence: 0,
   playerProgress: {}, playerVitals: {}, bossesSpawned: new Set(), finalBossDefeated: false,
-  reconnectAttempts: 0, reconnectTimer: 0
+  reconnectAttempts: 0, reconnectTimer: 0, transferringToGodot: false
 };
 let audioContext = null;
 let musicStep = 0;
@@ -1016,6 +1017,7 @@ async function quickJoin() {
 async function joinRoom(roomId) {
   closeSocket();
   appState.roomId = roomId;
+  appState.transferringToGodot = false;
   appState.reconnectAttempts = 0;
   appState.players.clear();
   localPlayer.group.position.set(0, 0, 0);
@@ -1058,6 +1060,43 @@ function connectRoomSocket(roomId) {
   }
 }
 
+function transferToGodot() {
+  if (RULESET !== "crossplay-v1" || appState.transferringToGodot || !appState.roomId) return;
+  const roomId = appState.roomId;
+  const token = localStorage.getItem(`samkokgo-resume-${roomId}`);
+  if (!token || appState.socket?.readyState !== WebSocket.OPEN) {
+    showToast("尚未完成玩家身分同步，請重新連線");
+    return;
+  }
+  try { sessionStorage.setItem(handoffKey(roomId), token); }
+  catch { showToast("瀏覽器未允許工作階段儲存，無法接續戰場"); return; }
+  const destination = godotBattlePath(roomId, appState.heroId);
+  const socket = appState.socket;
+  appState.transferringToGodot = true;
+  appState.roomId = null; // suppress lobby auto-reconnect during handoff
+  let navigated = false;
+  const navigate = () => {
+    if (navigated) return;
+    navigated = true;
+    location.assign(destination);
+  };
+  socket.addEventListener("close", navigate, { once: true });
+  socket.close(4100, "handoff"); // reserves the same player on Cloudflare
+  setTimeout(navigate, 1800);
+}
+
+function showWebResult(outcome) {
+  const result = acceptedResult(outcome);
+  if (!result) return;
+  const victory = result === "victory";
+  ui.resultSeal.classList.toggle("win", victory);
+  $("resultHeading").textContent = result === "exit" ? "已離開戰場" : (victory ? "戰鬥勝利" : "挑戰失敗");
+  $("resultMessage").textContent = result === "exit"
+    ? "已返回遊戲大廳，歡迎再次集結隊伍。"
+    : (victory ? "隊伍已完成討伐，準備下一場征途。" : "本次挑戰結束，可重新召集隊友。");
+  setScreen("result");
+}
+
 function handleSocketMessage(event) {
   let message;
   try { message = JSON.parse(event.data); } catch { return; }
@@ -1065,6 +1104,10 @@ function handleSocketMessage(event) {
     appState.selfId = message.selfId;
     if (message.resumeToken && appState.roomId) localStorage.setItem(`samkokgo-resume-${appState.roomId}`, message.resumeToken);
     applySnapshot(message.snapshot);
+    if (appState.room?.status === "playing" && RULESET === "crossplay-v1") {
+      transferToGodot();
+      return;
+    }
     if (appState.room?.status === "playing") {
       clearRun();
       appState.startedAt = appState.room.startedAt;
@@ -1093,7 +1136,10 @@ function handleSocketMessage(event) {
     if (appState.host && RULESET !== "crossplay-v1") activateAbility(message.playerId, message.x, message.z);
   }
   if (message.type === "level-choice" && appState.host && RULESET !== "crossplay-v1") applyLevelChoice(message.playerId, message.upgradeId);
-  if (message.type === "battle-result") finishRun(message.result === "victory");
+  if (message.type === "battle-result") {
+    if (RULESET === "crossplay-v1") showWebResult(message.result);
+    else finishRun(message.result === "victory");
+  }
   if (message.type === "room") {
     appState.room = message.room;
     appState.host = appState.room?.hostId === appState.selfId || appState.players.get(appState.selfId)?.host;
@@ -1101,6 +1147,7 @@ function handleSocketMessage(event) {
     renderGameLock();
   }
   if (message.type === "start") {
+    if (RULESET === "crossplay-v1") { transferToGodot(); return; }
     clearRun();
     appState.difficulty = message.difficulty ?? "normal";
     updateMapVisual(message.mapId ?? "forest");
@@ -1786,6 +1833,7 @@ function updateCombat(now, delta) {
 }
 
 function finishRun(win) {
+  if (RULESET === "crossplay-v1") { showWebResult(win ? "victory" : "defeat"); return; }
   if (appState.screen !== "game") return;
   playSound(win ? "win" : "loss");
   ui.resultSeal.classList.toggle("win", win);
@@ -1914,9 +1962,7 @@ function installControls() {
     if (!appState.roomId) return;
     try {
       const browserLink = `${location.origin}/?room=${appState.roomId}${RULESET === "crossplay-v1" ? "" : "&classic=1"}`;
-      const invitation = RULESET === "crossplay-v1"
-        ? `Three.js: ${browserLink}\nGodot 4.3: ${location.origin}/godot/?room=${appState.roomId}`
-        : browserLink;
+      const invitation = browserLink;
       await navigator.clipboard.writeText(invitation);
       showToast("邀請連結已複製");
     }
@@ -1940,7 +1986,10 @@ setAudioEnabled(audioEnabled);
 clearRun();
 onResize();
 animate();
-if (new URLSearchParams(location.search).has("room")) joinRoom(new URLSearchParams(location.search).get("room"));
+const launchRoute = new URLSearchParams(location.search);
+const outcome = acceptedResult(launchRoute.get("result"));
+if (outcome) showWebResult(outcome);
+else if (launchRoute.has("room")) joinRoom(launchRoute.get("room"));
 else refreshRooms();
 setInterval(() => { if (appState.screen === "home") refreshRooms(); }, 8000);
 setInterval(scheduleMusic, 1800);
