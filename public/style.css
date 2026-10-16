@@ -170,6 +170,7 @@ button { font: inherit; color: inherit; }
 }
 
 /* Web-based settlement: one home, one lobby, one end screen. */
+.result-screen .result-seal { top: 34%; }
 .result-copy { position: absolute; left: 50%; top: 52%; width: min(84vw, 440px);
   transform: translateX(-50%); color: var(--ink); text-align: center; }
 .result-copy h1 { margin: 0; font-size: clamp(24px, 4.3vw, 36px); letter-spacing: .12em; }
