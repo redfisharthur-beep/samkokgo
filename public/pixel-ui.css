@@ -361,3 +361,165 @@ html,body,#app { background: #102e46; color: #f8ebca; }
   .room-actions .round-button { min-width: 96px; height: 48px; padding: 5px; }
   .room-actions .primary-action { min-width: 132px; }
 }
+
+/* Shared 16:9 pixel-art frame for every non-combat scene. */
+@media (orientation: landscape) {
+  #app {
+    width: min(100vw, 177.7778vh);
+    height: min(100vh, 56.25vw);
+    inset: auto;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    background: #10191d;
+    box-shadow: 0 0 0 1px #d7b374, 0 0 0 8px #111a20;
+  }
+}
+
+/* Hero selection uses the same detailed 16:9 environment as the title art. */
+.hero-picker {
+  padding: clamp(12px, 2.4vw, 38px);
+  background: linear-gradient(180deg, rgba(8, 20, 28, .56), rgba(7, 15, 21, .76)),
+    url("/assets/ui/lobby-pixel.webp") center / cover no-repeat;
+  backdrop-filter: none;
+}
+.hero-picker::before {
+  inset: clamp(7px, 1vw, 16px);
+  border: 2px solid rgba(247, 206, 122, .75);
+  box-shadow: inset 0 0 0 3px rgba(34, 43, 43, .8), 0 0 32px rgba(4, 14, 21, .55);
+  opacity: 1;
+}
+.hero-picker-shell {
+  width: min(92%, 1320px);
+  max-height: 90%;
+  padding: clamp(18px, 2.5vw, 38px) clamp(18px, 3vw, 46px);
+  border: 4px solid #e7bd70;
+  border-radius: 0;
+  outline: 2px solid #50372c;
+  outline-offset: -9px;
+  color: #fff0d0;
+  background: linear-gradient(180deg, rgba(25, 48, 58, .96), rgba(24, 34, 39, .97));
+  box-shadow: inset 0 0 0 2px #f4d79b66, 0 8px 0 #171d21, 0 22px 54px #07131bc9;
+}
+.picker-label { color: #f1cc7e; font-weight: 900; }
+.hero-picker h2 {
+  margin: 4px 0 10px;
+  color: #fff0c9;
+  font-family: "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  letter-spacing: .16em;
+  text-shadow: 2px 3px 0 #4c2924, 0 0 14px #edc46b55;
+}
+.picker-close {
+  right: 15px; top: 15px; width: 42px; height: 42px;
+  border: 3px solid #e4bc70; border-radius: 0;
+  color: #fff0c9; background: linear-gradient(#9d3c31, #582a29);
+  box-shadow: inset 0 0 0 2px #4a2e2b, 0 4px 0 #1a2227;
+}
+.picker-tabs {
+  display: flex; justify-content: center; gap: 8px;
+  margin: 0 auto clamp(10px, 1.6vh, 18px);
+  padding-bottom: 10px; border-bottom: 2px solid #d7b37466;
+}
+.picker-tabs button {
+  min-width: clamp(118px, 13vw, 190px); min-height: 42px;
+  padding: 7px 14px; border: 2px solid #9d8658; border-radius: 0;
+  color: #e8d8b5; background: linear-gradient(#344d58, #1d343f);
+  box-shadow: inset 0 0 0 2px #81949a26, 0 4px 0 #17232a;
+  font-weight: 900; cursor: pointer;
+}
+.picker-tabs button.active {
+  border-color: #ffe092; color: #fff4d3;
+  background: linear-gradient(#9b4634, #632b2a);
+  box-shadow: inset 0 0 0 2px #ffd67c55, 0 4px 0 #351d1b;
+}
+.hero-picker .hero-choices { gap: clamp(8px, 1.2vw, 18px); }
+.hero-picker .hero-choice {
+  min-height: clamp(180px, 32vh, 300px);
+  padding: 12px 8px 14px;
+  border: 3px solid #aa925c;
+  border-radius: 0;
+  background: linear-gradient(180deg, #315261, #1c3541);
+  box-shadow: inset 0 0 0 3px #132b35, inset 0 0 0 5px #b99a5c55, 0 6px 0 #111e24;
+}
+.hero-picker .hero-choice:nth-child(1) { background: linear-gradient(180deg, #477e61, #1f473e); }
+.hero-picker .hero-choice:nth-child(2) { background: linear-gradient(180deg, #5b6484, #30364f); }
+.hero-picker .hero-choice:nth-child(3) { background: linear-gradient(180deg, #478896, #244c5a); }
+.hero-picker .hero-choice:nth-child(4) { background: linear-gradient(180deg, #a5554c, #4c3037); }
+.hero-picker .hero-choice canvas {
+  height: clamp(112px, 20vh, 184px);
+  filter: drop-shadow(3px 5px 0 #101a20aa) drop-shadow(0 0 8px #fff0bf33);
+}
+.hero-picker .hero-choice b { color: #fff1cb; text-shadow: 2px 3px 0 #273039; }
+.hero-picker .hero-choice small { color: #f2dcac; }
+.hero-picker .hero-choice.selected {
+  border-color: #ffe394;
+  box-shadow: inset 0 0 0 3px #f3bd55, 0 0 0 2px #422b27, 0 0 22px #ffdc7d66, 0 7px 0 #311e1d;
+}
+.hero-picker .hero-choice.locked { filter: saturate(.55) brightness(.72); }
+.hero-description {
+  max-width: 760px; margin: 12px auto;
+  border: 2px solid #b99a5c; border-radius: 0;
+  color: #fff0d0; background: #172a32e8;
+  box-shadow: inset 0 0 0 2px #d5ba7940;
+}
+.hero-description h3 { color: #f6d385; }
+.hero-description p { color: #f0e4c7; }
+.picker-confirm {
+  min-height: 48px; border: 3px solid #ffe194; border-radius: 0;
+  background: linear-gradient(#d65336, #8f2d27);
+  box-shadow: inset 0 0 0 2px #f8c37366, 0 5px 0 #431f20;
+  letter-spacing: .08em;
+}
+
+/* Room, settlement, and legacy web HUD reuse the title palette and sharp frames. */
+.room-screen .kingdom-vista,
+.result-screen .kingdom-vista {
+  background: linear-gradient(180deg, #102b3a55, #101b24a8),
+    url("/assets/ui/lobby-pixel.webp") center / cover no-repeat;
+  image-rendering: auto;
+  filter: none;
+}
+.room-screen::before,
+.result-screen::before {
+  content: "";
+  display: block;
+  position: absolute;
+  left: 50%; top: 50%;
+  width: min(1120px, 94vw);
+  height: min(780px, 90vh);
+  transform: translate(-50%, -50%);
+  background: linear-gradient(145deg, #193643ed, #172630f2);
+  border: 4px solid #d9b56e;
+  outline: 3px solid #3b2b25;
+  outline-offset: -11px;
+  box-shadow: inset 0 0 0 3px #f5d99144, 0 8px 0 #141d22, 0 22px 52px #07131b99;
+}
+.room-config .config-button,
+.game-hud .time-pill,
+.game-hud .party-strip,
+.game-hud .team-health,
+.game-hud .boss-health,
+.game-hud .skill-token,
+.game-hud .upgrade-card,
+.result-actions .round-button {
+  border-radius: 0;
+  border: 2px solid #cba85e;
+  color: #fff0cf;
+  background: linear-gradient(#304957, #1c303b);
+  box-shadow: inset 0 0 0 2px #efcf7a2b, 0 4px 0 #151f25, 0 8px 16px #09141c66;
+}
+.game-hud .upgrade-card { color: #fff0cf; }
+.game-hud .skill-token b { border-radius: 0; background: #8f3a31; }
+.game-hud .special-button { border-radius: 0; }
+.room-config .config-button:hover,
+.room-actions .round-button:hover,
+.result-actions .round-button:hover { filter: brightness(1.14); }
+.results-banner { color: #f1cf7b; }
+
+@media (max-width: 760px) and (orientation: landscape) {
+  .hero-picker-shell { width: 94%; max-height: 94%; padding: 10px 14px; }
+  .hero-picker .hero-choice { min-height: 122px; }
+  .hero-picker .hero-choice canvas { height: 76px; }
+  .picker-tabs { margin-bottom: 5px; padding-bottom: 5px; }
+  .picker-tabs button { min-height: 32px; }
+}

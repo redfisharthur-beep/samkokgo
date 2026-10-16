@@ -7,6 +7,7 @@ const html = read("public/index.html");
 const js = read("public/main.js");
 const css = read("public/pixel-ui.css");
 const godot = read("godot/scripts/battle/battle_art_main.gd");
+const project = read("godot/project.godot");
 
 test("new RPG homepage ships actual pixel assets and portrait panels", () => {
   assert.match(html, /href="\/pixel-ui\.css"/);
@@ -49,6 +50,15 @@ test("room setup shows the selected map, difficulty, and party size", () => {
   assert.match(js, /\$\("difficultyValue"\)\.textContent = difficultyName/);
   assert.match(js, /\$\("mapValue"\)\.textContent = mapName/);
   assert.match(css, /\.room-config \{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+});
+test("all screens share the 1672 by 941 pixel-art frame", () => {
+  assert.match(project, /window\/size\/viewport_width=1672/);
+  assert.match(project, /window\/size\/viewport_height=941/);
+  assert.match(css, /width: min\(100vw, 177\.7778vh\)/);
+  assert.match(css, /height: min\(100vh, 56\.25vw\)/);
+  assert.match(css, /\.hero-picker[\s\S]*lobby-pixel\.webp/);
+  assert.match(css, /\.room-screen \.kingdom-vista[\s\S]*lobby-pixel\.webp/);
+  assert.ok(existsSync(new URL("../public/assets/ui/lobby-pixel.webp", import.meta.url)));
 });
 test("lost mouse or window focus always stops browser movement", () => {
   assert.match(js, /const clearMovementInput = \(event = null\) =>/);
