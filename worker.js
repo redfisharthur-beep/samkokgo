@@ -13,6 +13,24 @@ export default {
       const hub = env.GAME_HUB.get(id);
       return hub.fetch(request);
     }
+    if (url.pathname === "/index.wasm") {
+      const assetHeaders = new Headers();
+      assetHeaders.set("accept-encoding", "identity");
+      const compressedAsset = await env.ASSETS.fetch(
+        new Request(new URL("/index.wasm.br", request.url), { headers: assetHeaders })
+      );
+      if (!compressedAsset.ok) return compressedAsset;
+      const headers = new Headers(compressedAsset.headers);
+      headers.set("content-type", "application/wasm");
+      headers.set("content-encoding", "br");
+      headers.set("cache-control", "public, max-age=31536000, immutable");
+      headers.set("vary", "accept-encoding");
+      return new Response(compressedAsset.body, {
+        status: compressedAsset.status,
+        statusText: compressedAsset.statusText,
+        headers
+      });
+    }
     return env.ASSETS.fetch(request);
   }
 };
