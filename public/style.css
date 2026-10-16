@@ -168,3 +168,61 @@ button { font: inherit; color: inherit; }
   .level-track { top: 80px; }
   .boss-health { top: 96px; width: min(280px, 52vw); }
 }
+
+/* SamkokGo lobby refresh */
+:root {
+  --ink:#39251b; --ink-soft:#705548; --paper:#f3dfb5; --paper-glass:rgba(54,34,24,.88);
+  --moss:#9a2d21; --moss-deep:#573126; --gold:#f4bd55; --line:rgba(255,218,142,.54);
+  --shadow:0 8px 0 rgba(39,22,16,.38),0 16px 36px rgba(24,18,14,.35);
+}
+.home-screen::before,.room-screen::before,.result-screen::before {
+  background:linear-gradient(180deg,rgba(22,34,49,.08),rgba(26,28,29,.02) 42%,rgba(31,23,18,.42)),
+    radial-gradient(ellipse at 50% 40%,transparent 25%,rgba(25,23,21,.24));
+}
+.home-brand {position:absolute;left:50%;top:5.5%;transform:translateX(-50%);width:min(90vw,660px);text-align:center;color:#fff2d2;text-shadow:0 3px #502719,0 6px 14px rgba(27,18,12,.76);pointer-events:none}
+.brand-kicker {display:inline-block;padding:5px 13px;border:1px solid rgba(255,222,156,.65);border-radius:999px;color:#ffe5a8;background:rgba(49,32,25,.66);font-size:clamp(9px,1.2vh,12px);letter-spacing:.22em}
+.home-brand h1 {margin:7px 0 -4px;color:#ffcf6c;font-family:Georgia,"Noto Sans TC",serif;font-size:clamp(38px,7.8vh,74px);font-weight:900;line-height:.94;letter-spacing:.045em;-webkit-text-stroke:1px #672718;paint-order:stroke fill;text-shadow:0 3px #702b18,0 6px #381e17,0 10px 18px rgba(18,14,13,.7)}
+.home-brand h1 span {color:#fff0c8}
+.brand-chinese {margin:6px 0 0;color:#fff1d1;font-size:clamp(21px,3.8vh,36px);font-weight:900;letter-spacing:.18em;text-shadow:0 3px #6d2c1a,0 7px 14px rgba(20,14,12,.75)}
+.brand-subtitle {display:inline-block;margin-top:7px;padding:4px 17px;border-block:1px solid rgba(255,217,144,.68);color:#ffebc4;background:rgba(57,36,26,.55);font-size:clamp(11px,1.7vh,15px);letter-spacing:.14em}
+.hero-choices {top:53%;gap:clamp(9px,1.8vw,18px);align-items:stretch}
+.hero-choice {width:clamp(72px,9vw,112px);height:clamp(68px,11vh,94px);padding:9px 8px 7px;display:flex;flex-direction:column;gap:3px;border:2px solid #ddb664;border-radius:12px;color:#f6e6c2;background:linear-gradient(180deg,rgba(55,39,31,.94),rgba(28,26,26,.92));box-shadow:0 4px 0 #492619,0 8px 16px rgba(20,15,12,.36)}
+.hero-choice svg {width:30px;height:30px;color:#f0c76f}
+.hero-choice span {font-size:clamp(12px,1.8vh,15px);font-weight:800;letter-spacing:.08em;text-shadow:0 2px #382219}
+.hero-choice.selected {color:#fff5dc;border-color:#fff0b8;background:linear-gradient(180deg,#c74a2c,#8c261c);box-shadow:0 0 0 3px rgba(255,202,91,.34),0 4px 0 #572016,0 10px 22px rgba(22,13,11,.4);transform:translateY(-5px)}
+.hero-choice.selected svg {color:#fff0b8}
+.home-actions {top:72%;gap:clamp(10px,1.7vw,20px);align-items:stretch}
+.home-actions .round-button {width:clamp(145px,18vw,220px);height:clamp(62px,10vh,82px);padding:8px 12px;display:grid;grid-template-columns:34px 1fr;grid-template-rows:1fr auto;column-gap:9px;align-content:center;justify-items:start;border:2px solid #e8ba61;border-radius:13px;color:#fff0cd;background:linear-gradient(180deg,rgba(48,36,30,.96),rgba(26,27,28,.96));box-shadow:0 4px #4a281b,0 10px 20px rgba(19,14,12,.4);backdrop-filter:blur(6px)}
+.home-actions .round-button svg {grid-column:1;grid-row:1 / span 2;width:30px;height:30px;align-self:center;color:#f3cd78;stroke-width:2.6}
+.home-actions .round-button span {align-self:end;font-size:clamp(14px,2vh,18px);line-height:1.15;font-weight:900;letter-spacing:.05em}
+.home-actions .round-button small {align-self:start;margin-top:3px;color:#e6cba0;font-size:clamp(9px,1.35vh,11px);line-height:1.2}
+.home-actions .round-button.primary-action {border-color:#ffe19a;color:#fff8e8;background:linear-gradient(180deg,#db542d,#9c251b 58%,#6d211a);box-shadow:0 0 0 3px rgba(255,204,91,.26),0 5px #521c15,0 12px 24px rgba(20,13,11,.48)}
+.home-actions .round-button.primary-action svg {color:#ffe19a}
+.home-actions .round-button:hover {transform:translateY(-4px);filter:brightness(1.12)}
+.home-actions .round-button:active {transform:translateY(2px);box-shadow:0 2px #4a281b,0 5px 10px rgba(19,14,12,.35)}
+.home-tip {position:absolute;left:50%;bottom:max(19px,env(safe-area-inset-bottom));transform:translateX(-50%);padding:8px 16px;border:1px solid rgba(255,219,146,.44);border-radius:8px;color:#f7e6c9;background:rgba(36,30,27,.78);box-shadow:0 4px 14px rgba(20,14,11,.24);font-size:clamp(10px,1.4vh,12px);white-space:nowrap;pointer-events:none}
+.home-tip span {color:#ffd37b;font-weight:800}
+.home-controls {z-index:2}
+.home-controls .small-icon-button,.small-icon-button,.config-button {border:1px solid #e3ba70;border-radius:10px;color:#ffe7b3;background:linear-gradient(180deg,#52372a,#302522);box-shadow:0 3px #281a15,0 7px 14px rgba(18,13,10,.32)}
+.home-controls .small-icon-button:hover,.small-icon-button:hover,.config-button:hover {color:#fff8e6;border-color:#ffdf91;background:#8e3622}
+.room-drawer {z-index:3}
+.room-card {border:1px solid rgba(255,220,151,.68);border-radius:8px;color:#fff0d2;background:rgba(42,32,27,.92)}
+.room-card:hover {color:#fff;background:#7c3423}
+.room-config {top:72%;gap:9px}
+.config-button {width:auto;min-width:78px;height:45px;padding:4px 8px;display:flex;gap:5px;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.config-button svg {width:20px;height:20px}
+.control-hint {position:absolute;left:max(20px,env(safe-area-inset-left));bottom:max(18px,env(safe-area-inset-bottom));padding:8px 12px;border:1px solid rgba(255,219,146,.55);border-radius:8px;color:#fff1d3;background:rgba(40,30,25,.82);box-shadow:0 4px 14px rgba(20,14,11,.24);font-size:clamp(10px,1.45vh,12px);pointer-events:none}
+button:focus-visible {outline:3px solid #ffe28f;outline-offset:3px}
+@media (max-height:500px) and (orientation:landscape) {
+ .home-brand {top:2%}.home-brand h1 {font-size:clamp(32px,8vh,48px)}.brand-chinese {font-size:clamp(18px,4vh,24px)}.brand-subtitle {display:none}
+ .hero-choices {top:52%}.hero-choice {height:58px;width:78px}.hero-choice svg {width:21px;height:21px}
+ .home-actions {top:76%}.home-actions .round-button {height:58px}.home-tip {bottom:4px}
+}
+@media (orientation:portrait) {
+ .home-brand {top:4%}.hero-choices {top:43%}
+ .home-actions {top:60%;display:grid;grid-template-columns:repeat(3,minmax(90px,1fr));width:min(94vw,460px);gap:8px}
+ .home-actions .round-button {width:100%;height:70px;padding:7px;grid-template-columns:25px 1fr;column-gap:4px}
+ .home-actions .round-button svg {width:23px;height:23px}.home-actions .round-button span {font-size:12px}.home-actions .round-button small {font-size:9px}
+ .home-tip {max-width:94vw;overflow:hidden;text-overflow:ellipsis;bottom:max(8px,env(safe-area-inset-bottom))}
+ .control-hint {left:50%;transform:translateX(-50%);bottom:max(12px,env(safe-area-inset-bottom));white-space:nowrap}
+}
