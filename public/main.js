@@ -601,11 +601,61 @@ function updateWarriorMotion(visual, now) {
   visual.headGroup.rotation.x = attack ? -strike * .07 : 0;
 }
 
+
+const PIXEL_GENERAL_LORE = {
+  liubei: ["劉備 · 仁德之主", "蜀國主公 · 綠金甲冑，重視同伴生存與支援。"],
+  caocao: ["曹操 · 亂世梟雄", "魏國主公 · 黑金重甲，擅長統帥與強力攻擊。"],
+  sunquan: ["孫權 · 江東霸主", "吳國主公 · 青藍戰袍，快速遠距離壓制敵軍。"],
+  lvbu: ["呂布 · 無雙戰神", "群雄猛將 · 赤金戰鎧，以重擊突破重圍。"]
+};
+const portraitCache = new Map();
+function paintGeneral(canvas, heroId) {
+  if (!canvas || !PIXEL_GENERAL_LORE[heroId]) return;
+  if (!portraitCache.has(heroId)) {
+    const pic = new Image();
+    const ready = new Promise((resolve) => {
+      pic.onload = () => resolve(pic);
+      pic.onerror = () => resolve(null);
+    });
+    pic.src = `/assets/pixel/actors/${heroId}.svg`;
+    portraitCache.set(heroId, ready);
+  }
+  portraitCache.get(heroId).then((pic) => {
+    if (!pic || !canvas.isConnected) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, 56, 72);
+    ctx.drawImage(pic, 0, 0, 56, 72, 0, 0, 56, 72);
+  });
+}
+function refreshGeneralPresentation(heroId) {
+  const lore = PIXEL_GENERAL_LORE[heroId] ?? PIXEL_GENERAL_LORE.liubei;
+  if ($("heroInfoTitle")) $("heroInfoTitle").textContent = lore[0];
+  if ($("heroInfo")) $("heroInfo").textContent = lore[1];
+  if ($("currentHeroName")) $("currentHeroName").textContent = HEROES[heroId]?.name ?? "劉備";
+  if (ui.home) ui.home.dataset.hero = heroId;
+}
+function showGeneralPicker(show) {
+  const panel = $("heroPicker");
+  if (!panel) return;
+  panel.classList.toggle("hidden", !show);
+  if (show) panel.querySelector(".hero-choice.selected")?.focus();
+}
+function initializeGeneralArt() {
+  document.querySelectorAll("canvas[data-portrait]").forEach(c => paintGeneral(c, c.dataset.portrait));
+  $("pickHero")?.addEventListener("click", () => showGeneralPicker(true));
+  $("closeHeroPicker")?.addEventListener("click", () => showGeneralPicker(false));
+  $("confirmHero")?.addEventListener("click", () => showGeneralPicker(false));
+  $("heroPicker")?.addEventListener("keydown", (e) => { if (e.key === "Escape") showGeneralPicker(false); });
+}
+
 function setHero(heroId) {
   if (!HEROES[heroId]) return;
   appState.heroId = heroId;
   localStorage.setItem("samkokgo-hero", heroId);
   ui.heroChoices.querySelectorAll("[data-hero]").forEach((button) => button.classList.toggle("selected", button.dataset.hero === heroId));
+  refreshGeneralPresentation(heroId);
   if (appState.screen === "home") {
     const position = localPlayer.group.position.clone();
     world.remove(localPlayer.group);
@@ -995,6 +1045,7 @@ function setScreen(name) {
   ui.room.classList.toggle("hidden", name !== "room");
   ui.hud.classList.toggle("hidden", name !== "game");
   ui.result.classList.toggle("hidden", name !== "result");
+  if (name !== "home") showGeneralPicker(false);
   updateRotateHint();
   renderGameLock();
   if (name === "home") refreshRooms();
@@ -1287,11 +1338,22 @@ function renderRoom() {
   for (let i = 0; i < (appState.room?.maxPlayers ?? 6); i++) {
     const slot = document.createElement("div");
     slot.className = `roster-slot${members[i] ? " filled" : ""}${members[i]?.host ? " host" : ""}${members[i]?.offline ? " offline" : ""}`;
-    if (members[i]) slot.style.setProperty("--slot-color", colorCss(HEROES[members[i].heroId]?.color ?? COLORS[members[i].colorIndex % COLORS.length]));
+    if (members[i]) {
+      slot.style.setProperty("--slot-color", colorCss(HEROES[members[i].heroId]?.color ?? COLORS[members[i].colorIndex % COLORS.length]));
+      const avatar = document.createElement("canvas");
+      avatar.width = 56; avatar.height = 72; avatar.className = "roster-avatar";
+      slot.append(avatar);
+      paintGeneral(avatar, members[i].heroId ?? "liubei");
+      const name = document.createElement("span");
+      name.className = "roster-name";
+      name.textContent = HEROES[members[i].heroId]?.name ?? "英雄";
+      slot.append(name);
+    }
     slot.setAttribute("aria-label", members[i] ? "玩家已加入" : "等待玩家");
     ui.roster.append(slot);
   }
   ui.roomStatus.dataset.count = `${count}/${appState.room?.maxPlayers ?? 6}`;
+  if ($("roomCode")) $("roomCode").textContent = `房間 ${appState.roomId ?? "--------"} · ${count}/${appState.room?.maxPlayers ?? 6} 人`;
   ui.roomStatus.title = `${count}/${appState.room?.maxPlayers ?? 6}`;
   const locked = Boolean(appState.room?.locked);
   $("lockRoom").classList.toggle("selected", locked);
@@ -1341,6 +1403,12 @@ async function refreshRooms() {
   try {
     const data = await api(protocolPath("/api/rooms"));
     ui.roomDrawer.replaceChildren();
+    if (!(data.rooms ?? []).length) {
+      const empty = document.createElement("p");
+      empty.className = "rooms-empty";
+      empty.textContent = "目前沒有公開房間，率先建立一支隊伍吧。";
+      ui.roomDrawer.append(empty);
+    }
     for (const room of data.rooms ?? []) {
       const card = document.createElement("button");
       card.className = "room-card";
@@ -1980,6 +2048,7 @@ function sendRoomAction(type, extra = {}) {
 
 window.addEventListener("resize", onResize);
 installControls();
+initializeGeneralArt();
 ui.specialAbility.replaceChildren(pixelIcon("special", "special-pixel-icon"));
 setHero(appState.heroId);
 setAudioEnabled(audioEnabled);

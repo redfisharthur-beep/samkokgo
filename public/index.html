@@ -8,51 +8,76 @@
     <title>三國倖存者</title>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
     <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/pixel-ui.css" />
   </head>
   <body>
     <main id="app">
       <canvas id="world" aria-label="三國倖存者遊戲場景"></canvas>
 
       <section id="home" class="screen home-screen">
+        <div class="kingdom-vista" aria-hidden="true"></div>
+        <div class="home-glory" aria-hidden="true"><span>蜀</span><span>魏</span><span>吳</span></div>
+        <div class="hero-stage" aria-hidden="true">
+          <canvas width="56" height="72" data-portrait="caocao" class="stage-hero stage-cao"></canvas>
+          <canvas width="56" height="72" data-portrait="liubei" class="stage-hero stage-liu"></canvas>
+          <canvas width="56" height="72" data-portrait="sunquan" class="stage-hero stage-sun"></canvas>
+          <canvas width="56" height="72" data-portrait="lvbu" class="stage-hero stage-lvbu"></canvas>
+        </div>
+        <div class="brand-title" role="heading" aria-level="1">
+          <span class="brand-kicker">THE THREE KINGDOMS · PIXEL ADVENTURE</span>
+          <strong>SamkokGo</strong>
+          <b>三國倖存者</b>
+          <span class="brand-ribbon">六人同征 · 亂世突圍</span>
+        </div>
+        <button class="hero-open" id="pickHero" type="button">選擇武將 <span id="currentHeroName">劉備</span><span aria-hidden="true">›</span></button>
         <div class="brand-mark" aria-hidden="true">
           <span class="brand-ring"></span><span class="brand-blade"></span><span class="brand-dot"></span>
         </div>
-        <div class="hero-choices" id="heroChoices" aria-label="選擇武將">
-          <button class="hero-choice" data-hero="liubei" aria-label="劉備" title="劉備"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 6v31M19 12h10M24 5l-4 7h8l-4-7M17 42l7-5 7 5M18 26h12"/></svg></button>
-          <button class="hero-choice" data-hero="caocao" aria-label="曹操" title="曹操"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 5v38M18 12h12M19 16l5-9 5 9M17 25h14M19 41l5-4 5 4"/></svg></button>
-          <button class="hero-choice" data-hero="sunquan" aria-label="孫權" title="孫權"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M11 37Q34 34 34 12M13 35l22-24M18 30l7 7M24 22l7 7M31 13l7-5-1 8"/></svg></button>
-          <button class="hero-choice" data-hero="lvbu" aria-label="呂布" title="呂布"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 4v40M19 11h10M18 15l6-10 6 10M14 22l10-6 10 6M18 38h12"/></svg></button>
-        </div>
+
         <div class="home-actions">
           <button class="round-button primary-action" id="quickJoin" aria-label="快速加入" title="快速加入">
-            <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M27 4 11 26h11l-2 18 17-25H26l1-15Z"/></svg>
+            <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M27 4 11 26h11l-2 18 17-25H26l1-15Z"/></svg><span>快速加入</span>
           </button>
           <button class="round-button" id="createRoom" aria-label="建立公開房" title="建立公開房">
-            <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 42V9a3 3 0 0 1 3-3h23v36M8 42h32M34 17h8v25M17 15h9M17 22h9M17 29h9M17 36h6"/></svg>
+            <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 42V9a3 3 0 0 1 3-3h23v36M8 42h32M34 17h8v25M17 15h9M17 22h9M17 29h9M17 36h6"/></svg><span>建立房間</span>
           </button>
           <button class="round-button" id="refreshRooms" aria-label="尋找房間" title="尋找房間">
-            <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="21" cy="21" r="12"/><path d="m30 30 11 11M21 14v14M14 21h14"/></svg>
+            <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="21" cy="21" r="12"/><path d="m30 30 11 11M21 14v14M14 21h14"/></svg><span>公開房間</span>
           </button>
         </div>
-        <div class="room-drawer" id="roomDrawer" aria-label="可加入的公開房間"></div>
+        <div class="room-browser"><h3>軍情 · 公開房間</h3><div class="room-drawer" id="roomDrawer" aria-label="可加入的公開房間"></div></div>
         <div class="home-controls">
           <button class="small-icon-button" id="soundToggle" aria-label="開啟音效" title="音效"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 12h6l7-6v20l-7-6H5zM23 12a6 6 0 0 1 0 8M25 8a11 11 0 0 1 0 16"/></svg></button>
           <button class="small-icon-button" id="fullscreen" aria-label="全螢幕" title="全螢幕">
             <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M12 4H4v8M20 4h8v8M4 20v8h8M28 20v8h-8"/></svg>
           </button>
         </div>
+        <div class="hero-picker hidden" id="heroPicker" role="dialog" aria-modal="true" aria-labelledby="heroPickerHeading">
+            <div class="hero-picker-shell">
+              <button type="button" id="closeHeroPicker" class="picker-close" aria-label="返回首頁">×</button>
+              <p class="picker-label">SELECT YOUR GENERAL</p>
+              <h2 id="heroPickerHeading">選擇出戰武將</h2>
+              <div class="hero-choices" id="heroChoices"><button class="hero-choice" data-hero="liubei" aria-label="劉備" title="劉備" type="button"><canvas width="56" height="72" data-portrait="liubei" aria-hidden="true"></canvas><b>劉備</b><small>蜀 · 仁德之主</small></button>
+<button class="hero-choice" data-hero="caocao" aria-label="曹操" title="曹操" type="button"><canvas width="56" height="72" data-portrait="caocao" aria-hidden="true"></canvas><b>曹操</b><small>魏 · 亂世梟雄</small></button>
+<button class="hero-choice" data-hero="sunquan" aria-label="孫權" title="孫權" type="button"><canvas width="56" height="72" data-portrait="sunquan" aria-hidden="true"></canvas><b>孫權</b><small>吳 · 江東霸主</small></button>
+<button class="hero-choice" data-hero="lvbu" aria-label="呂布" title="呂布" type="button"><canvas width="56" height="72" data-portrait="lvbu" aria-hidden="true"></canvas><b>呂布</b><small>群 · 無雙戰神</small></button></div>
+              <div class="hero-description"><h3 id="heroInfoTitle">劉備 · 仁德之主</h3><p id="heroInfo">善於支援友軍，穩健迎戰四方敵軍。</p></div>
+              <button id="confirmHero" type="button" class="picker-confirm">確認武將　◆</button>
+            </div>
+          </div>
       </section>
 
-      <section id="room" class="screen room-screen hidden">
+      <section id="room" class="screen room-screen hidden"><div class="kingdom-vista" aria-hidden="true"></div>
+        <div class="room-banner"><p>ASSEMBLE YOUR TEAM</p><h1>英雄集結</h1><span id="roomCode">等待房間連線</span></div>
         <button class="small-icon-button back-button" id="leaveRoom" aria-label="離開房間" title="離開">
           <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M20 6 10 16l10 10M11 16h17"/></svg>
         </button>
         <div class="room-status" id="roomStatus" aria-live="polite"></div>
-        <div class="roster" id="roster"></div>
+        <div class="roster" id="roster"></div><p class="roster-caption">同袍集結中 · 最多六人合作</p>
         <div class="room-config" id="roomConfig" aria-label="房間設定">
-          <button class="config-button" id="mapSelect" aria-label="切換地圖" title="地圖"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="m4 10 10-5 12 5 10-5v25l-10 5-12-5-10 5V10ZM14 5v25m12-20v25M7 14h4M17 15l6 3M29 16l4-3"/></svg></button>
-          <button class="config-button" id="difficultySelect" aria-label="切換難度" title="難度"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 4 36 34H4L20 4ZM20 15v9m0 5v1"/></svg></button>
-          <button class="config-button" id="sizeSelect" aria-label="切換人數上限" title="人數"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="14" cy="13" r="5"/><circle cx="27" cy="14" r="4"/><path d="M4 33c0-7 4-11 10-11s10 4 10 11M24 24c6-3 12 1 12 8"/></svg></button>
+          <button class="config-button" id="mapSelect" aria-label="切換地圖" title="地圖"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="m4 10 10-5 12 5 10-5v25l-10 5-12-5-10 5V10ZM14 5v25m12-20v25M7 14h4M17 15l6 3M29 16l4-3"/></svg><span>地圖</span></button>
+          <button class="config-button" id="difficultySelect" aria-label="切換難度" title="難度"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 4 36 34H4L20 4ZM20 15v9m0 5v1"/></svg><span>難度</span></button>
+          <button class="config-button" id="sizeSelect" aria-label="切換人數上限" title="人數"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="14" cy="13" r="5"/><circle cx="27" cy="14" r="4"/><path d="M4 33c0-7 4-11 10-11s10 4 10 11M24 24c6-3 12 1 12 8"/></svg><span>人數</span></button>
         </div>
         <div class="room-actions">
           <button class="round-button" id="inviteButton" aria-label="複製邀請連結" title="邀請">
@@ -93,11 +118,11 @@
         <div class="revive-hint hidden" id="reviveHint" aria-label="等待隊友救援"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M9 25c6-8 11-8 15-3 4-5 9-5 15 3l-8 12H17L9 25ZM16 21l-5-8m21 8 5-8M20 34h8"/></svg></div>
       </section>
 
-      <section id="result" class="screen result-screen hidden">
+      <section id="result" class="screen result-screen hidden"><div class="kingdom-vista" aria-hidden="true"></div><div class="results-banner">SAMKOKGO · BATTLE REPORT</div>
         <div class="result-seal" id="resultSeal"></div>
         <div class="result-copy" aria-live="polite">
           <h1 id="resultHeading">戰鬥結束</h1>
-          <p id="resultMessage">回到大廳，準備下一場征途。</p>
+          <p id="resultMessage">回到大廳，準備下一場征途。</p><p class="result-caption">英雄不息 · 征途未止</p>
         </div>
         <div class="result-actions">
           <button class="round-button primary-action" id="playAgain" aria-label="再玩一次" title="再玩一次">
