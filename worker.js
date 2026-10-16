@@ -172,6 +172,21 @@ export class GameHub extends DurableObject {
       this.broadcast(room.id, { type: "players", players: this.playerList(room.id, room) });
       return;
     }
+    if (message.type === "player-attack" && room.status === "playing") {
+      const now = Date.now();
+      const lastAttackAt = attachment.lastAttackAt ?? 0;
+      const targetId = String(message.targetId ?? "").slice(0, 32);
+      if (now - lastAttackAt < 250 || !/^e-[0-9]{1,8}$/.test(targetId)) return;
+      attachment.lastAttackAt = now;
+      socket.serializeAttachment(attachment);
+      this.broadcast(room.id, {
+        type: "player-attack",
+        playerId: attachment.playerId,
+        targetId,
+        damage: clampNumber(message.damage, 1, 40)
+      }, socket);
+      return;
+    }
     if (message.type === "game-state" && attachment.playerId === room.hostId && room.status === "playing") {
       const state = sanitizeGameState(message.state);
       if (state) {
@@ -412,7 +427,8 @@ function sanitizeGameState(state) {
     playerVitals,
     xp: Math.round(clampNumber(state.xp, 0, 9999)),
     level: Math.round(clampNumber(state.level, 1, 99)),
-    energy: Math.round(clampNumber(state.energy, 0, 100))
+    energy: Math.round(clampNumber(state.energy, 0, 100)),
+    elapsed: clampNumber(state.elapsed, 0, 360)
   };
 }
 function json(data, status = 200) {
