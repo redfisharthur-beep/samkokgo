@@ -49,6 +49,7 @@ var is_host := false
 var room_connected := false
 var crossplay_mode := false
 var boss_max_hp := 1600.0
+var ability_ready_at := 0.0
 var sync_clock := 0.0
 var _sync_clock := 0.0
 var next_enemy_id := 1
@@ -160,6 +161,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		var touch := event as InputEventScreenTouch
 		if touch.pressed:
+			if crossplay_mode and mode == "battle" and touch.position.distance_to(Vector2(get_viewport_rect().size.x - 90.0, get_viewport_rect().size.y - 90.0)) < 48.0:
+				if ability_ready_at <= Time.get_unix_time_from_system() * 1000.0:
+					network.send_action({"type": "ability"})
+				return
 			if mode == "lobby":
 				_handle_lobby_click(touch.position)
 			elif mode == "battle" and touch.position.y < 100.0:
@@ -889,6 +894,9 @@ func _apply_game_state(state: Dictionary) -> void:
 						"reach": upgrade_choices.append("神兵覺醒")
 						"speed": upgrade_choices.append("輕身步法")
 	xp_goal = 5 + (level - 1) * 2 if crossplay_mode else 5 + level * 3
+	if crossplay_mode:
+		var cooldowns: Dictionary = state.get("cooldowns", {})
+		ability_ready_at = float(cooldowns.get(network.self_id, 0.0))
 	if crossplay_mode and state.get("result") is String:
 		mode = "victory" if str(state.get("result")) == "victory" else "defeat"
 	var state_vitals: Variant = state.get("playerVitals", {})
@@ -1061,6 +1069,12 @@ func _draw_hud(size: Vector2) -> void:
 	var timer := int(maxf(0.0, 360.0 - elapsed))
 	var time_text := "%02d:%02d" % [timer / 60, timer % 60]
 	draw_string(UI_FONT, Vector2(size.x * 0.5 - 60, 42), time_text, HORIZONTAL_ALIGNMENT_CENTER, 120, 25, PAPER)
+	if crossplay_mode:
+		var ability_position := Vector2(size.x - 90.0, size.y - 90.0)
+		var available := ability_ready_at <= Time.get_unix_time_from_system() * 1000.0
+		draw_circle(ability_position, 39.0, Color("#b39761") if available else Color("#5e6661"))
+		draw_circle(ability_position, 35.0, Color("#293b33"))
+		draw_string(UI_FONT, ability_position + Vector2(-35.0, 8.0), "絕技" if available else "冷卻", HORIZONTAL_ALIGNMENT_CENTER, 70.0, 18, PAPER)
 	if boss_spawned and boss_hp > 0.0:
 		_draw_bar(Rect2(size.x * 0.3, 91, size.x * 0.4, 13), boss_hp / maxf(1.0, boss_max_hp), Color("#b66e5e"))
 		draw_string(UI_FONT, Vector2(size.x * 0.5 - 60, 121), "董卓", HORIZONTAL_ALIGNMENT_CENTER, 120, 16, PAPER)
