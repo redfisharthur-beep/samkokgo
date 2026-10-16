@@ -1087,7 +1087,7 @@ func _draw_lobby(size: Vector2) -> void:
 func _draw_battle(size: Vector2) -> void:
 	_draw_battlefield(size)
 	for drop in drops:
-		_draw_drop(drop["pos"], str(drop.get("type", "energy")))
+		_draw_drop(drop["pos"])
 	for enemy in enemies:
 		_draw_enemy(enemy)
 	for shot in shots:
