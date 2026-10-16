@@ -48,6 +48,8 @@ var attack_flash := 0.0
 var is_host := false
 var room_connected := false
 var crossplay_mode := false
+var selected_hero_id := "liubei"
+var navigating_to_lobby := false
 var boss_max_hp := 1600.0
 var ability_ready_at := 0.0
 var sync_clock := 0.0
@@ -64,11 +66,17 @@ func _ready() -> void:
 	network.room_event.connect(_on_room_event)
 	network.connection_changed.connect(_on_connection_changed)
 	if OS.has_feature("web"):
-		var invited_room := str(JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('room') || ''"))
+		var invited_room := str(JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('room') || ''")).to_upper()
+		var requested_hero := str(JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('hero') || 'liubei'"))
+		if requested_hero in ["liubei", "caocao", "sunquan", "lvbu"]:
+			selected_hero_id = requested_hero
 		if invited_room.length() == 8:
-			room_id = invited_room.to_upper()
-			status_text = "透過邀請連結加入房間…"
-			network.join_room(room_id)
+			room_id = invited_room
+			var handoff_token := str(JavaScriptBridge.eval("window.sessionStorage.getItem('samkokgo-handoff-' + (new URLSearchParams(window.location.search).get('room') || '').toUpperCase()) || ''"))
+			status_text = "正在接續網頁大廳的戰鬥…"
+			network.join_room(room_id, selected_hero_id, handoff_token)
+		else:
+			JavaScriptBridge.eval("window.location.replace('/')")
 	queue_redraw()
 
 func _process(delta: float) -> void:
@@ -149,6 +157,16 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if mode == "battle" and OS.has_feature("web"):
+		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+			_leave_battle_to_web()
+			return
+		if event is InputEventScreenTouch and event.pressed and Rect2(12.0, 6.0, 115.0, 65.0).has_point(event.position):
+			_leave_battle_to_web()
+			return
+		if event is InputEventMouseButton and event.pressed and Rect2(12.0, 6.0, 115.0, 65.0).has_point(event.position):
+			_leave_battle_to_web()
+			return
 	if mode == "battle" and not upgrade_choices.is_empty():
 		if event is InputEventScreenTouch and event.pressed:
 			_choose_upgrade(_choice_at(event.position))
@@ -257,7 +275,7 @@ func _start_battle(_send_room_start: bool = false) -> void:
 		_ensure_vital(network.self_id)
 		for teammate in remote_players:
 			_ensure_vital(str(teammate.get("id", "")))
-	if not room_connected or is_host:
+	if (not room_connected or is_host) and not crossplay_mode:
 		_spawn_enemy(false)
 		if room_connected:
 			network.send_game_state({"enemies": [], "pickups": [], "elapsed": 0})
@@ -699,6 +717,9 @@ func _on_room_event(event: Dictionary) -> void:
 	var kind := str(event.get("type", ""))
 	if kind == "welcome":
 		var welcome_snapshot: Dictionary = event.get("snapshot", {})
+		for p in welcome_snapshot.get("players", []):
+			if p is Dictionary and str(p.get("id", "")) == network.self_id:
+				selected_hero_id = str(p.get("heroId", selected_hero_id))
 		_update_room_players(welcome_snapshot.get("players", []))
 		var room_data: Dictionary = welcome_snapshot.get("room", {})
 		crossplay_mode = str(room_data.get("ruleset", "")) == "crossplay-v1"
@@ -720,7 +741,7 @@ func _on_room_event(event: Dictionary) -> void:
 		if room_connected and (not is_host or crossplay_mode):
 			_apply_game_state(event.get("state", {}))
 	elif kind == "battle-result":
-		mode = "victory" if str(event.get("result", "")) == "victory" else "defeat"
+		_finish_battle_to_web(str(event.get("result", "defeat")))
 	elif kind == "player-attack":
 		if is_host and not crossplay_mode:
 			_apply_remote_attack(event)
@@ -909,7 +930,7 @@ func _apply_game_state(state: Dictionary) -> void:
 		var cooldowns: Dictionary = state.get("cooldowns", {})
 		ability_ready_at = float(cooldowns.get(network.self_id, 0.0))
 	if crossplay_mode and state.get("result") is String:
-		mode = "victory" if str(state.get("result")) == "victory" else "defeat"
+		_finish_battle_to_web(str(state.get("result")))
 	var state_vitals: Variant = state.get("playerVitals", {})
 	if state_vitals is Dictionary:
 		player_vitals = state_vitals
@@ -936,6 +957,28 @@ func _on_connection_changed(state: String) -> void:
 		room_connected = false
 		status_text = "連線失敗 · 可先單人試玩"
 	queue_redraw()
+
+func _finish_battle_to_web(result: String) -> void:
+	if navigating_to_lobby:
+		return
+	navigating_to_lobby = true
+	mode = "victory" if result == "victory" else "defeat"
+	if OS.has_feature("web"):
+		network.leave_room()
+		if result == "victory":
+			JavaScriptBridge.eval("window.location.replace('/?result=victory')")
+		else:
+			JavaScriptBridge.eval("window.location.replace('/?result=defeat')")
+
+func _leave_battle_to_web() -> void:
+	if navigating_to_lobby:
+		return
+	navigating_to_lobby = true
+	network.leave_room()
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("window.location.replace('/?result=exit')")
+	else:
+		mode = "lobby"
 
 func _draw() -> void:
 	var size := get_viewport_rect().size
@@ -986,10 +1029,16 @@ func _draw_battle(size: Vector2) -> void:
 		_draw_player_vital(remote_pos, vital, 0.82)
 	var own_vital: Dictionary = player_vitals.get(network.self_id, {})
 	var own_out := bool(own_vital.get("downed", false)) or bool(own_vital.get("eliminated", false))
-	_draw_hero(player_pos, 1.0 + minf(0.16, level * 0.008), Color("#708b78").darkened(0.45) if own_out else Color("#708b78"), Color("#353b37"), Color("#c4a766"), 0.0)
+	var hero_colors := {"liubei": Color("#708b78"), "caocao": Color("#7b778c"), "sunquan": Color("#7896a1"), "lvbu": Color("#b47665")}
+	var hero_color: Color = hero_colors.get(selected_hero_id, Color("#708b78"))
+	_draw_hero(player_pos, 1.0 + minf(0.16, level * 0.008), hero_color.darkened(0.45) if own_out else hero_color, Color("#353b37"), Color("#c4a766"), 0.0)
 	if room_connected:
 		_draw_player_vital(player_pos, own_vital, 1.0)
 	_draw_hud(size)
+	if OS.has_feature("web") and crossplay_mode:
+		draw_rect(Rect2(Vector2(15, 10), Vector2(100, 50)), Color("#293b33", 0.94))
+		draw_rect(Rect2(Vector2(15, 10), Vector2(100, 50)), Color("#c6a96d"), false, 2.0)
+		draw_string(UI_FONT, Vector2(18, 42), "返回大廳", HORIZONTAL_ALIGNMENT_CENTER, 94, 17, PAPER)
 	if moving_touch >= 0:
 		draw_circle(move_origin, 43.0, Color(0.18, 0.2, 0.17, 0.22))
 		draw_circle(move_origin + move_vector * 34.0, 18.0, Color("#9caf9a"))
@@ -1075,7 +1124,8 @@ func _draw_hud(size: Vector2) -> void:
 	draw_rect(Rect2(Vector2(0, 0), Vector2(size.x, 82)), Color(0.17, 0.19, 0.17, 0.85))
 	_draw_bar(Rect2(25, 24, minf(240, size.x * 0.28), 18), hp / max_hp, RUST)
 	_draw_bar(Rect2(25, 52, minf(240, size.x * 0.28), 10), float(xp) / float(xp_goal), JADE)
-	draw_string(UI_FONT, Vector2(30, 20), "劉備", HORIZONTAL_ALIGNMENT_LEFT, 100, 16, PAPER)
+	var hero_labels := {"liubei": "劉備", "caocao": "曹操", "sunquan": "孫權", "lvbu": "呂布"}
+	draw_string(UI_FONT, Vector2(145, 20), str(hero_labels.get(selected_hero_id, "劉備")), HORIZONTAL_ALIGNMENT_LEFT, 100, 16, PAPER)
 	draw_string(UI_FONT, Vector2(25, 79), "Lv.%d  ·  %d" % [level, kills], HORIZONTAL_ALIGNMENT_LEFT, 170, 14, PAPER)
 	var timer := int(maxf(0.0, 360.0 - elapsed))
 	var time_text := "%02d:%02d" % [timer / 60, timer % 60]

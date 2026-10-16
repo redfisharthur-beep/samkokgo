@@ -36,8 +36,10 @@ func create_room() -> void:
 func quick_join() -> void:
 	_request_api("/api/quick-join", HTTPClient.METHOD_POST, {})
 
-func join_room(target_room_id: String, hero_id: String = "liubei") -> void:
+func join_room(target_room_id: String, hero_id: String = "liubei", transfer_token: String = "") -> void:
 	room_id = target_room_id.to_upper()
+	if not transfer_token.is_empty():
+		resume_token = transfer_token
 	if socket.get_ready_state() != WebSocketPeer.STATE_CLOSED:
 		socket.close()
 	socket = WebSocketPeer.new()
