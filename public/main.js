@@ -1045,7 +1045,11 @@ function setScreen(name) {
   ui.room.classList.toggle("hidden", name !== "room");
   ui.hud.classList.toggle("hidden", name !== "game");
   ui.result.classList.toggle("hidden", name !== "result");
-  if (name !== "home") showGeneralPicker(false);
+  if (name !== "home") {
+    showGeneralPicker(false);
+    ui.home.classList.remove("rooms-open");
+    $("refreshRooms").setAttribute("aria-expanded", "false");
+  }
   updateRotateHint();
   renderGameLock();
   if (name === "home") refreshRooms();
@@ -1990,7 +1994,11 @@ function installControls() {
   $("quickJoin").addEventListener("click", quickJoin);
   ui.heroChoices.querySelectorAll("[data-hero]").forEach((button) => button.addEventListener("click", () => setHero(button.dataset.hero)));
   $("createRoom").addEventListener("click", createRoom);
-  $("refreshRooms").addEventListener("click", refreshRooms);
+  $("refreshRooms").addEventListener("click", async () => {
+    const open = ui.home.classList.toggle("rooms-open");
+    $("refreshRooms").setAttribute("aria-expanded", String(open));
+    if (open) await refreshRooms();
+  });
   $("lockRoom").addEventListener("click", () => sendRoomAction("lock"));
   ui.mapSelect.addEventListener("click", () => {
     const current = appState.room?.mapId ?? "forest";
