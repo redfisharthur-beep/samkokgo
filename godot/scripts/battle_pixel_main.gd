@@ -85,11 +85,14 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	_px(Rect2(pos + Vector2(-bar_w * 0.5, bar_y), Vector2(bar_w, 5) * scale), Color("#493c38"), unit)
 	_px(Rect2(pos + Vector2(-bar_w * 0.5, bar_y), Vector2(bar_w * clampf(float(enemy["hp"]) / maxf(1.0, float(enemy["max_hp"])), 0.0, 1.0), 5) * scale), PIXEL_RED, unit)
 
-func _draw_drop(pos: Vector2) -> void:
+func _draw_drop(pos: Vector2, kind: String = "energy") -> void:
+	var treasure := kind == "treasure"
+	var main_color := Color("#d5a94f") if treasure else Color("#adc09a")
+	var center_color := Color("#fff0a2") if treasure else Color("#e4d6aa")
 	_px(Rect2(pos + Vector2(-8, -8), Vector2(16, 16)), Color("#56644f"), 4)
-	_px(Rect2(pos + Vector2(-4, -12), Vector2(8, 24)), Color("#adc09a"), 4)
-	_px(Rect2(pos + Vector2(-12, -4), Vector2(24, 8)), Color("#adc09a"), 4)
-	_px(Rect2(pos + Vector2(-4, -4), Vector2(8, 8)), Color("#e4d6aa"), 4)
+	_px(Rect2(pos + Vector2(-4, -12), Vector2(8, 24)), main_color, 4)
+	_px(Rect2(pos + Vector2(-12, -4), Vector2(24, 8)), main_color, 4)
+	_px(Rect2(pos + Vector2(-4, -4), Vector2(8, 8)), center_color, 4)
 
 func _draw_hud(size: Vector2) -> void:
 	var compact := size.x < 720.0

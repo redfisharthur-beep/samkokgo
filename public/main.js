@@ -1,5 +1,6 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
 import { godotBattlePath, handoffKey, acceptedResult } from "/lobby-flow.mjs";
+import { loadProfile, saveProfile, summonHero, claimRun, equipGear, equippedBonuses, SUMMON_COST } from "/progression.mjs";
 
 const COLORS = [0x77877d, 0xb67b6d, 0x8097a0, 0xb49b6e, 0x8e8290, 0x68766b];
 const HEROES = {
@@ -34,6 +35,7 @@ const ui = {
   bossHealth: $("bossHealth"), bossHealthFill: $("bossHealthFill"), reviveHint: $("reviveHint"),
   soundToggle: $("soundToggle"), soundToggleHud: $("soundToggleHud")
 };
+let profile = loadProfile();
 const UPGRADE_OPTIONS = {
   power: { label: "攻擊", max: 5 },
   tempo: { label: "攻速", max: 5 },
@@ -119,6 +121,7 @@ const appState = {
   playerProgress: {}, playerVitals: {}, bossesSpawned: new Set(), finalBossDefeated: false,
   reconnectAttempts: 0, reconnectTimer: 0, transferringToGodot: false
 };
+if (!profile.unlockedHeroes.includes(appState.heroId)) appState.heroId = "liubei";
 let audioContext = null;
 let musicStep = 0;
 let audioEnabled = localStorage.getItem("samkokgo-sound") === "on";
@@ -640,21 +643,92 @@ function showGeneralPicker(show) {
   const panel = $("heroPicker");
   if (!panel) return;
   panel.classList.toggle("hidden", !show);
-  if (show) panel.querySelector(".hero-choice.selected")?.focus();
+  if (show) { renderProgression(); selectPickerTab("heroes"); panel.querySelector(".hero-choice.selected")?.focus(); }
+}
+function selectPickerTab(tab) {
+  const valid = ["heroes", "recruit", "gear"].includes(tab) ? tab : "heroes";
+  document.querySelectorAll("[data-picker-tab]").forEach(button => button.classList.toggle("active", button.dataset.pickerTab === valid));
+  $("heroPanel")?.classList.toggle("hidden", valid !== "heroes");
+  $("recruitPanel")?.classList.toggle("hidden", valid !== "recruit");
+  $("gearPanel")?.classList.toggle("hidden", valid !== "gear");
+  if (valid === "heroes") $("heroPickerHeading").textContent = "選擇出戰武將";
+  if (valid === "recruit") $("heroPickerHeading").textContent = "招募新武將";
+  if (valid === "gear") $("heroPickerHeading").textContent = "武器與防具";
+}
+function refreshHeroLocks() {
+  ui.heroChoices.querySelectorAll("[data-hero]").forEach(button => {
+    const unlocked = profile.unlockedHeroes.includes(button.dataset.hero);
+    button.disabled = !unlocked;
+    button.classList.toggle("locked", !unlocked);
+    button.classList.toggle("selected", button.dataset.hero === appState.heroId);
+    button.setAttribute("aria-disabled", String(!unlocked));
+    const hint = button.querySelector("small");
+    if (hint) {
+      hint.dataset.originalText ??= hint.textContent;
+      hint.textContent = unlocked ? hint.dataset.originalText : "尚未招募 · 前往抽卡";
+    }
+  });
+}
+function renderProgression() {
+  refreshHeroLocks();
+  $("recruitSeals").textContent = String(profile.seals);
+  const locked = Object.keys(HEROES).filter(id => !profile.unlockedHeroes.includes(id));
+  $("recruitHint").textContent = locked.length ? `剩餘可招募：${locked.map(id => HEROES[id].name).join("、")}` : "所有武將均已招募";
+  $("drawGeneral").disabled = profile.seals < SUMMON_COST || !locked.length;
+  $("drawGeneral").textContent = !locked.length ? "已招募全部武將" : `消耗 ${SUMMON_COST} 軍功令　招募武將`;
+  const mapNames = { forest: "山林", camp: "軍營", city: "城池" };
+  $("mapProgressText").textContent = `已開放戰場：${profile.unlockedMaps.map(id => mapNames[id]).join("、")}`;
+  $("gearCount").textContent = String(profile.inventory.length);
+  const bonuses = equippedBonuses(profile);
+  $("gearStats").textContent = `裝備加成：攻擊 +${bonuses.attack} · 防禦 +${bonuses.defense} · 移動 +${bonuses.speed}`;
+  const slots = $("gearSlots");
+  slots.replaceChildren();
+  for (const slot of ["weapon", "armor"]) {
+    const equipped = profile.inventory.find(item => item.id === profile.equipped[slot]);
+    const chip = document.createElement("span");
+    chip.textContent = `${slot === "weapon" ? "武器" : "防具"}：${equipped ? `${equipped.name} +${equipped.value}` : "空"}`;
+    slots.append(chip);
+  }
+  const list = $("gearList");
+  list.replaceChildren();
+  if (!profile.inventory.length) {
+    const empty = document.createElement("p"); empty.className = "gear-empty"; empty.textContent = "完成闖關後，隨機獲得武器或防具。"; list.append(empty);
+  }
+  for (const item of [...profile.inventory].reverse()) {
+    const row = document.createElement("div"); row.className = `gear-row ${item.rarity}`;
+    const copy = document.createElement("span");
+    copy.textContent = `${item.name} · ${item.slot === "weapon" ? "武器" : "防具"} · ${item.rarity === "epic" ? "史詩" : item.rarity === "rare" ? "稀有" : "普通"} +${item.value}`;
+    const button = document.createElement("button"); button.type = "button";
+    const active = profile.equipped[item.slot] === item.id;
+    button.textContent = active ? "已裝備" : "裝備"; button.disabled = active;
+    button.addEventListener("click", () => { equipGear(profile, item.id); saveProfile(profile); renderProgression(); });
+    row.append(copy, button); list.append(row);
+  }
 }
 function initializeGeneralArt() {
   document.querySelectorAll("canvas[data-portrait]").forEach(c => paintGeneral(c, c.dataset.portrait));
   $("pickHero")?.addEventListener("click", () => showGeneralPicker(true));
   $("closeHeroPicker")?.addEventListener("click", () => showGeneralPicker(false));
   $("confirmHero")?.addEventListener("click", () => showGeneralPicker(false));
+  document.querySelectorAll("[data-picker-tab]").forEach(button => button.addEventListener("click", () => selectPickerTab(button.dataset.pickerTab)));
+  $("drawGeneral")?.addEventListener("click", () => {
+    const draw = summonHero(profile);
+    if (!draw.ok) return showToast(draw.reason === "all-unlocked" ? "所有武將都已招募" : "軍功令不足，通關後可取得軍功令");
+    saveProfile(profile); renderProgression();
+    const name = HEROES[draw.heroId].name;
+    showToast(`招募成功：${name}`);
+    selectPickerTab("heroes");
+  });
   $("heroPicker")?.addEventListener("keydown", (e) => { if (e.key === "Escape") showGeneralPicker(false); });
 }
 
 function setHero(heroId) {
   if (!HEROES[heroId]) return;
+  if (!profile.unlockedHeroes.includes(heroId)) return showToast("武將尚未招募，請先抽卡解鎖");
   appState.heroId = heroId;
   localStorage.setItem("samkokgo-hero", heroId);
   ui.heroChoices.querySelectorAll("[data-hero]").forEach((button) => button.classList.toggle("selected", button.dataset.hero === heroId));
+  refreshHeroLocks();
   refreshGeneralPresentation(heroId);
   if (appState.screen === "home") {
     const position = localPlayer.group.position.clone();
@@ -857,7 +931,7 @@ function showRunTrail(x, z, heroId) {
 function createPickup(position, id = null, type = "energy") {
   const group = new THREE.Group();
   group.userData.pixelStyle = `item-${type}`;
-  const color = type === "heal" ? 0xb77b6d : 0xc2a56f;
+  const color = type === "heal" ? 0xb77b6d : type === "treasure" ? 0xe2b74f : 0xc2a56f;
   const core = new THREE.Group();
   if (type === "heal") {
     addBlock(core, [.56, .64, .42], 0xe4d8c0, [0, 0, 0], { metalness: .02 });
@@ -865,6 +939,11 @@ function createPickup(position, id = null, type = "energy") {
     addBlock(core, [.22, .22, .47], 0xb77b6d, [0, .02, .23]);
     addBlock(core, [.46, .22, .2], 0xb77b6d, [0, .02, .14]);
     addBlock(core, [.4, .08, .46], 0xc1a978, [0, -.32, 0], { metalness: .12 });
+  } else if (type === "treasure") {
+    addBlock(core, [.72, .46, .55], 0x8d6845, [0, -.04, 0], { metalness: .12 });
+    addBlock(core, [.82, .2, .62], 0xe0b64e, [0, .23, 0], { metalness: .24, roughness: .35 });
+    addBlock(core, [.18, .45, .12], 0xffe28d, [0, .08, .35], { metalness: .2 });
+    addBlock(core, [.28, .26, .08], 0xffefad, [0, .06, .42], { metalness: .12 });
   } else {
     addBlock(core, [.66, .44, .48], 0xa4895e, [0, -.04, 0], { metalness: .1 });
     addBlock(core, [.72, .16, .54], 0xc2a56f, [0, .22, 0], { metalness: .16 });
@@ -1125,7 +1204,8 @@ function transferToGodot() {
   }
   try { sessionStorage.setItem(handoffKey(roomId), token); }
   catch { showToast("瀏覽器未允許工作階段儲存，無法接續戰場"); return; }
-  const destination = godotBattlePath(roomId, appState.heroId);
+  profile = loadProfile();
+  const destination = godotBattlePath(roomId, appState.heroId, equippedBonuses(profile), appState.room?.mapId ?? "forest");
   const socket = appState.socket;
   appState.transferringToGodot = true;
   appState.roomId = null; // suppress lobby auto-reconnect during handoff
@@ -1144,12 +1224,24 @@ function showWebResult(outcome) {
   const result = acceptedResult(outcome);
   if (!result) return;
   const victory = result === "victory";
+  let reward = null;
+  const query = new URLSearchParams(location.search);
+  const runId = query.get("runId");
+  if (result !== "exit" && runId) {
+    profile = loadProfile();
+    reward = claimRun(profile, { runId, result, mapId: query.get("map") ?? "forest" });
+    if (reward) { saveProfile(profile); renderProgression(); }
+  }
   ui.resultSeal.classList.toggle("win", victory);
   $("resultHeading").textContent = result === "exit" ? "已離開戰場" : (victory ? "戰鬥勝利" : "挑戰失敗");
-  $("resultMessage").textContent = result === "exit"
+  const baseMessage = result === "exit"
     ? "已返回遊戲大廳，歡迎再次集結隊伍。"
     : (victory ? "隊伍已完成討伐，準備下一場征途。" : "本次挑戰結束，可重新召集隊友。");
+  $("resultMessage").textContent = reward
+    ? `${baseMessage} ${reward.seals ? `取得 ${reward.seals} 軍功令。` : "未通關，沒有軍功令。"} 獲得${reward.gear.name}（${reward.gear.slot === "weapon" ? "武器" : "防具"}）。`
+    : baseMessage;
   setScreen("result");
+  if (runId) history.replaceState(null, "", "/");
 }
 
 function handleSocketMessage(event) {
@@ -2020,8 +2112,11 @@ function installControls() {
   });
   $("lockRoom").addEventListener("click", () => sendRoomAction("lock"));
   ui.mapSelect.addEventListener("click", () => {
+    const availableMaps = MAP_ORDER.filter(id => profile.unlockedMaps.includes(id));
     const current = appState.room?.mapId ?? "forest";
-    const mapId = MAP_ORDER[(MAP_ORDER.indexOf(current) + 1) % MAP_ORDER.length];
+    const index = availableMaps.indexOf(current);
+    const mapId = availableMaps[(index + 1) % availableMaps.length] ?? "forest";
+    if (availableMaps.length < 2) return showToast("通關山林後可解鎖下一張地圖");
     sendRoomAction("configure", { mapId });
   });
   ui.difficultySelect.addEventListener("click", () => {

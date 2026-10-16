@@ -29,6 +29,8 @@ var _backdrop: Sprite2D
 var _hit_audio: Array[AudioStreamPlayer] = []
 var _next_audio := 0
 var _ready_for_state := false
+var _active_map_id := "forest"
+var _map_tint := Color.WHITE
 
 func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -48,6 +50,19 @@ func _ready() -> void:
 	_create_tilemap()
 	_create_props()
 	_ready_for_state = true
+	configure_map("forest")
+
+func configure_map(map_id: String) -> void:
+	if map_id == _active_map_id and _backdrop != null:
+		return
+	_active_map_id = map_id if map_id in ["forest", "camp", "city"] else "forest"
+	match _active_map_id:
+		"camp": _map_tint = Color("#c5ad86")
+		"city": _map_tint = Color("#a9b7b7")
+		_: _map_tint = Color("#a9bf9b")
+	if _backdrop != null:
+		_backdrop.modulate = _map_tint
+	ground.modulate = _map_tint
 
 func _create_tilemap() -> void:
 	var atlas := TileSetAtlasSource.new()
@@ -152,6 +167,8 @@ func refresh(main, delta: float) -> void:
 		var gem: Sprite2D = pickups[pickup_id]
 		var gem_pos: Vector2 = pickup.get("pos", Vector2.ZERO)
 		gem.position = gem_pos + Vector2(0, -8.0 + sin(_elapsed * 3.6 + float(pickup_id.hash() % 20)) * 4.0)
+		var type := str(pickup.get("type", "energy"))
+		gem.modulate = Color("#f1c76d") if type == "treasure" else (Color("#d88979") if type == "heal" else Color.WHITE)
 	for id in pickups.keys():
 		if not seen_pickups.has(id):
 			var old_gem: Sprite2D = pickups[id]

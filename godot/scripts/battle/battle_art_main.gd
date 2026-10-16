@@ -11,6 +11,7 @@ func _ready() -> void:
 	pixel_world.name = "IsometricBattleWorld"
 	pixel_world.show_behind_parent = true
 	add_child(pixel_world)
+	pixel_world.call("configure_map", current_map_id)
 	pixel_world.visible = mode == "battle"
 
 func _process(delta: float) -> void:
@@ -19,6 +20,7 @@ func _process(delta: float) -> void:
 		return
 	pixel_world.visible = mode == "battle"
 	if mode == "battle":
+		pixel_world.call("configure_map", current_map_id)
 		pixel_world.refresh(self, delta)
 
 func _draw_battle(size: Vector2) -> void:
@@ -70,7 +72,8 @@ func _draw_hud(size: Vector2) -> void:
 	var clock_rect := Rect2(Vector2(size.x * 0.5 - clock_w * 0.5, 15), Vector2(clock_w, top_height - 30))
 	_frame_panel(clock_rect, Color("#493027"))
 	_pixel_text(Vector2(clock_rect.position.x, 52), clock_text, 31 if not compact else 24, cream, HORIZONTAL_ALIGNMENT_CENTER, clock_w)
-	_pixel_text(Vector2(clock_rect.position.x, 72), "戰場計時", 13, accent, HORIZONTAL_ALIGNMENT_CENTER, clock_w)
+	var map_names := {"forest":"山林戰場", "camp":"軍營戰場", "city":"城池戰場"}
+	_pixel_text(Vector2(clock_rect.position.x, 72), str(map_names.get(current_map_id, "戰場計時")), 13, accent, HORIZONTAL_ALIGNMENT_CENTER, clock_w)
 	var party_w: float = minf(230.0, size.x * 0.28)
 	var party_rect := Rect2(Vector2(size.x - party_w - 24, 12), Vector2(party_w, top_height - 26))
 	_frame_panel(party_rect, base)

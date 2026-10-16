@@ -23,16 +23,17 @@ export function makeProgress() {
   return { xp: 0, level: 1, upgrades: { power: 0, tempo: 0, reach: 0, speed: 0 }, pendingChoices: [] };
 }
 export function makeBattle(now = Date.now()) {
-  return { schema: "crossplay-v1", elapsed: 0, startedAt: now, nextEnemy: 1, nextPickup: 1,
+  return { schema: "crossplay-v1", elapsed: 0, startedAt: now, nextEnemy: 1, nextPickup: 1, nextProjectile: 1,
     spawnClock: 0, boss: null, bossSpawned: false, finalBossDefeated: false,
-    bossesSpawned: [], energy: 0, enemies: [], pickups: [], playerProgress: {},
+    bossesSpawned: [], energy: 0, enemies: [], pickups: [], projectiles: [], playerProgress: {},
     playerVitals: {}, cooldowns: {}, result: null, xp: 0, level: 1 };
 }
 export function syncPlayers(state, players) {
   for (const p of players) {
     if (!p.playerId) continue;
     state.playerProgress[p.playerId] ??= makeProgress();
-    state.playerVitals[p.playerId] ??= { hp: 100, maxHp: 100, downed: false,
+    const maxHp = 100 + bounded(p.gearDefense ?? 0, 0, 15) * 8;
+    state.playerVitals[p.playerId] ??= { hp: maxHp, maxHp, downed: false,
       eliminated: false, reviveProgress: 0, downedAt: 0 };
   }
 }
@@ -62,7 +63,7 @@ export function chooseUpgrade(state, playerId, upgradeId) {
 export function movePlayer(player, dx, dz, seconds) {
   const mag = Math.hypot(dx, dz);
   if (mag < 0.001) return player;
-  const speed = (HERO_STATS[player.heroId] ?? HERO_STATS.liubei).speed;
+  const speed = (HERO_STATS[player.heroId] ?? HERO_STATS.liubei).speed + bounded(player.gearSpeed ?? 0, 0, 3) * 0.7;
   const dt = bounded(seconds, 0, 0.25);
   player.x = bounded(player.x + dx / Math.max(1, mag) * speed * dt, -WORLD_X, WORLD_X);
   player.z = bounded(player.z + dz / Math.max(1, mag) * speed * dt, -WORLD_Z, WORLD_Z);
@@ -86,8 +87,22 @@ function killEnemy(state, enemy) {
   state.enemies = state.enemies.filter(e => e !== enemy);
   if (enemy.kind === "boss") { state.finalBossDefeated = true; state.boss = null; }
   const id = "p-" + state.nextPickup++;
-  state.pickups.push({ id, x: enemy.x, z: enemy.z, type: "energy" });
+  const roll = Math.random();
+  const type = enemy.kind === "boss" ? "treasure" : roll < 0.12 ? "heal" : roll < 0.38 ? "treasure" : "energy";
+  state.pickups.push({ id, x: enemy.x, z: enemy.z, type });
   if (state.pickups.length > 20) state.pickups.shift();
+}
+function fireProjectile(state, enemy, target, angleOffset = 0, damage = 10, delay = 0.42) {
+  const dx = target.x - enemy.x;
+  const dz = target.z - enemy.z;
+  const angle = Math.atan2(dz, dx) + angleOffset;
+  const speed = enemy.kind === "boss" ? 10.5 : 8.2;
+  state.projectiles.push({
+    id: "b-" + state.nextProjectile++, x: enemy.x, z: enemy.z,
+    vx: Math.cos(angle) * speed, vz: Math.sin(angle) * speed,
+    life: 5.2, delay, damage, pattern: enemy.kind === "boss" ? "boss-fan" : "arrow"
+  });
+  if (state.projectiles.length > 48) state.projectiles.splice(0, state.projectiles.length - 48);
 }
 export function useAbility(state, playerId, players, now = Date.now()) {
   const p = players.find(p => p.playerId === playerId);
@@ -95,9 +110,10 @@ export function useAbility(state, playerId, players, now = Date.now()) {
   if (!p || vital?.downed || vital?.eliminated || state.result) return false;
   if ((state.cooldowns[playerId] ?? 0) > now) return false;
   state.cooldowns[playerId] = now + 20000;
+  const abilityDamage = 42 + bounded(p.gearAttack ?? 0, 0, 15) * 2;
   for (const enemy of [...state.enemies]) {
     if (distance(p, enemy) > 11) continue;
-    enemy.hp -= 42;
+    enemy.hp -= abilityDamage;
     if (enemy.hp <= 0) killEnemy(state, enemy);
   }
   return true;
@@ -129,19 +145,62 @@ export function advanceBattle(state, players, dt, now = Date.now(), difficulty =
     const nearest = alive.reduce((best, p) => !best || distance(p, enemy) < distance(best, enemy) ? p : best, null);
     if (!nearest) break;
     const gap = distance(enemy, nearest);
-    if (gap > 1.3) {
+    if (enemy.kind === "archer") {
+      enemy.attackClock = (enemy.attackClock ?? 1.5) - dt;
+      if (gap > 11) {
+        const travel = Math.min(gap - 10, 1.8 * dt);
+        enemy.x += (nearest.x - enemy.x) / gap * travel;
+        enemy.z += (nearest.z - enemy.z) / gap * travel;
+      }
+      if (enemy.attackClock <= 0 && gap < 28) {
+        enemy.attackClock = 2.2 + Math.random() * 0.45;
+        fireProjectile(state, enemy, nearest, 0, 9, 0.52);
+      }
+    } else if (enemy.kind === "boss") {
+      enemy.attackClock = (enemy.attackClock ?? 3) - dt;
+      if (gap > 5) {
+        const travel = Math.min(gap - 4.5, 2.1 * dt);
+        enemy.x += (nearest.x - enemy.x) / gap * travel;
+        enemy.z += (nearest.z - enemy.z) / gap * travel;
+      }
+      if (enemy.attackClock <= 0) {
+        enemy.attackClock = 3.6;
+        for (const spread of [-0.55, -0.28, 0, 0.28, 0.55]) fireProjectile(state, enemy, nearest, spread, 14, 0.68);
+      }
+    } else if (gap > 1.3) {
       const rate = enemy.kind === "runner" ? 4.2 : enemy.kind === "boss" ? 2.1 : 2.5;
       const travel = Math.min(gap - 1.2, rate * dt);
       enemy.x += (nearest.x - enemy.x) / gap * travel;
       enemy.z += (nearest.z - enemy.z) / gap * travel;
     } else {
       const vital = state.playerVitals[nearest.playerId];
-      vital.hp = Math.max(0, vital.hp - (enemy.kind === "boss" ? 15 : 5) * dt);
+      const defense = bounded(nearest.gearDefense ?? 0, 0, 15);
+      vital.hp = Math.max(0, vital.hp - (enemy.kind === "boss" ? 15 : 5) * (1 - defense * 0.025) * dt);
       if (vital.hp <= 0 && !vital.downed) {
         vital.downed = true;
         vital.downedAt = now;
       }
     }
+  }
+  for (const projectile of [...state.projectiles]) {
+    projectile.delay = Math.max(0, projectile.delay - dt);
+    projectile.life -= dt;
+    if (projectile.delay <= 0) {
+      projectile.x += projectile.vx * dt;
+      projectile.z += projectile.vz * dt;
+      const target = alive.find(p => distance(p, projectile) < 1.15);
+      if (target) {
+        const vital = state.playerVitals[target.playerId];
+        if (!vital?.downed && !vital?.eliminated) {
+          const defense = bounded(target.gearDefense ?? 0, 0, 15);
+          vital.hp = Math.max(0, vital.hp - projectile.damage * (1 - defense * 0.025));
+          if (vital.hp <= 0 && !vital.downed) { vital.downed = true; vital.downedAt = now; }
+        }
+        state.projectiles = state.projectiles.filter(item => item !== projectile);
+      }
+    }
+    if (projectile.life <= 0 || Math.abs(projectile.x) > WORLD_X + 5 || Math.abs(projectile.z) > WORLD_Z + 5)
+      state.projectiles = state.projectiles.filter(item => item !== projectile);
   }
   for (const player of alive) {
     const progress = state.playerProgress[player.playerId];
@@ -153,14 +212,20 @@ export function advanceBattle(state, players, dt, now = Date.now(), difficulty =
     const closest = state.enemies.reduce((best, e) => distance(e, player) <= stats.range + rank.reach * 1.2
       && (!best || distance(e, player) < distance(best, player)) ? e : best, null);
     if (!closest) continue;
-    closest.hp -= Math.round(stats.damage * (1 + rank.power * 0.22));
+    closest.hp -= Math.round((stats.damage + bounded(player.gearAttack ?? 0, 0, 15) * 2) * (1 + rank.power * 0.22));
     state.cooldowns[cooldownKey] = now + interval * 1000;
     if (closest.hp <= 0) killEnemy(state, closest);
   }
   for (const pickup of [...state.pickups]) {
     if (!alive.some(p => distance(p, pickup) < 2.6)) continue;
     state.pickups = state.pickups.filter(p => p !== pickup);
-    gainXp(state, players, 2);
+    gainXp(state, players, pickup.type === "treasure" ? 4 : 2);
+    if (pickup.type === "treasure") state.energy = Math.min(100, state.energy + 38);
+    if (pickup.type === "heal") {
+      const collector = alive.find(p => distance(p, pickup) < 2.6);
+      const vital = collector && state.playerVitals[collector.playerId];
+      if (vital) vital.hp = Math.min(vital.maxHp, vital.hp + 25);
+    }
   }
   for (const p of players) {
     const vital = state.playerVitals[p.playerId];

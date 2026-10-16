@@ -56,13 +56,32 @@
             <div class="hero-picker-shell">
               <button type="button" id="closeHeroPicker" class="picker-close" aria-label="返回首頁">×</button>
               <p class="picker-label">SELECT YOUR GENERAL</p>
-              <h2 id="heroPickerHeading">選擇出戰武將</h2>
+              <h2 id="heroPickerHeading">出征準備</h2>
+              <nav class="picker-tabs" aria-label="出征準備分頁">
+                <button type="button" class="active" data-picker-tab="heroes">選武將</button>
+                <button type="button" data-picker-tab="recruit">武將招募</button>
+                <button type="button" data-picker-tab="gear">裝備行囊</button>
+              </nav>
+              <section id="heroPanel" class="picker-page">
               <div class="hero-choices" id="heroChoices"><button class="hero-choice" data-hero="liubei" aria-label="劉備" title="劉備" type="button"><canvas width="56" height="72" data-portrait="liubei" aria-hidden="true"></canvas><b>劉備</b><small>蜀 · 仁德之主</small></button>
 <button class="hero-choice" data-hero="caocao" aria-label="曹操" title="曹操" type="button"><canvas width="56" height="72" data-portrait="caocao" aria-hidden="true"></canvas><b>曹操</b><small>魏 · 亂世梟雄</small></button>
 <button class="hero-choice" data-hero="sunquan" aria-label="孫權" title="孫權" type="button"><canvas width="56" height="72" data-portrait="sunquan" aria-hidden="true"></canvas><b>孫權</b><small>吳 · 江東霸主</small></button>
 <button class="hero-choice" data-hero="lvbu" aria-label="呂布" title="呂布" type="button"><canvas width="56" height="72" data-portrait="lvbu" aria-hidden="true"></canvas><b>呂布</b><small>群 · 無雙戰神</small></button></div>
               <div class="hero-description"><h3 id="heroInfoTitle">劉備 · 仁德之主</h3><p id="heroInfo">善於支援友軍，穩健迎戰四方敵軍。</p></div>
               <button id="confirmHero" type="button" class="picker-confirm">確認武將　◆</button>
+              </section>
+              <section id="recruitPanel" class="picker-page hidden">
+                <div class="progression-summary"><b>軍功令</b><strong id="recruitSeals">0</strong><small>通關結算取得 · 每次招募 100 枚</small></div>
+                <div class="recruit-preview"><canvas width="56" height="72" data-portrait="lvbu" aria-hidden="true"></canvas><div><b>群雄武將招募</b><small id="recruitHint">未招募武將將優先登場</small></div></div>
+                <button id="drawGeneral" class="picker-confirm" type="button">消耗 100 軍功令　招募武將</button>
+                <p id="mapProgressText" class="progression-note">戰役進度：山林</p>
+              </section>
+              <section id="gearPanel" class="picker-page hidden">
+                <div class="progression-summary"><b>裝備行囊</b><strong id="gearCount">0</strong><small>每場闖關結束隨機取得一件武器或防具</small></div>
+                <div class="gear-slots" id="gearSlots"></div>
+                <div class="gear-list" id="gearList"></div>
+                <p id="gearStats" class="progression-note">裝備加成：攻擊 +0 · 防禦 +0 · 移動 +0</p>
+              </section>
             </div>
           </div>
       </section>

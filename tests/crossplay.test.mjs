@@ -58,3 +58,30 @@ test("boss spawn remains guaranteed even when enemy slots are full", () => {
   assert.ok(s.enemies.some(e => e.kind === "boss"));
   assert.equal(s.enemies.length, 30);
 });
+
+test("archers and enemy generals create server-owned dodgeable projectile patterns", () => {
+  const s = makeBattle(0);
+  syncPlayers(s, party);
+  s.enemies = [
+    { id: "e-archer", x: 8, z: 0, hp: 19, kind: "archer", attackClock: 0.01 },
+    { id: "e-general", x: 12, z: 0, hp: 600, kind: "boss", attackClock: 0.01, bossIndex: 0 }
+  ];
+  s.bossSpawned = true;
+  s.boss = { hp: 600, maxHp: 600, bossIndex: 0 };
+  advanceBattle(s, party, 0.1, 100);
+  assert.ok(s.projectiles.some(shot => shot.pattern === "arrow"));
+  assert.equal(s.projectiles.filter(shot => shot.pattern === "boss-fan").length, 5);
+  assert.ok(s.projectiles.every(shot => shot.delay > 0));
+});
+
+test("treasure pickups add team XP and energy, while equipment stats affect battle", () => {
+  const s = makeBattle(0);
+  const geared = [{ ...party[0], gearAttack: 4, gearDefense: 4, gearSpeed: 1 }, { ...party[1] }];
+  syncPlayers(s, geared);
+  assert.equal(s.playerVitals.p1.maxHp, 132);
+  s.pickups = [{ id: "p-treasure", x: 0, z: 0, type: "treasure" }];
+  advanceBattle(s, geared, 0.1, 100);
+  assert.equal(s.pickups.length, 0);
+  assert.equal(s.energy, 38);
+  assert.equal(s.playerProgress.p1.xp, 4);
+});

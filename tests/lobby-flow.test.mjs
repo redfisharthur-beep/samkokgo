@@ -6,8 +6,8 @@ import { HANDOFF_PREFIX, validRoomId, handoffKey, godotBattlePath, acceptedResul
 test("website directs original room and hero into the Godot battlefield", () => {
   assert.equal(HANDOFF_PREFIX, "samkokgo-handoff-");
   assert.equal(handoffKey("abcdef12"), "samkokgo-handoff-ABCDEF12");
-  assert.equal(godotBattlePath("abcdef12", "sunquan"), "/godot/?room=ABCDEF12&hero=sunquan");
-  assert.equal(godotBattlePath("ABCDEF12", "unknown"), "/godot/?room=ABCDEF12&hero=liubei");
+  assert.equal(godotBattlePath("abcdef12", "sunquan"), "/godot/?room=ABCDEF12&hero=sunquan&atk=0&def=0&spd=0&map=forest");
+  assert.equal(godotBattlePath("ABCDEF12", "unknown", { attack: 3, defense: 2, speed: 1 }, "camp"), "/godot/?room=ABCDEF12&hero=liubei&atk=3&def=2&spd=1&map=camp");
   assert.ok(validRoomId("ABCDEF12"));
   assert.throws(() => godotBattlePath("invalid-room"));
 });
@@ -33,9 +33,8 @@ test("Godot restores the identity, hero, and returns to HTML results", () => {
   assert.ok(gd.includes("window.sessionStorage.getItem("));
   assert.ok(gd.includes("network.join_room(room_id, selected_hero_id, handoff_token)"));
   assert.ok(net.includes('transfer_token: String = ""'));
-  for (const result of ["victory", "defeat", "exit"]) {
-    assert.ok(gd.includes("window.location.replace('/?result=" + result + "')"));
-  }
+  assert.ok(gd.includes("/?result=%s&runId=%s&map=%s"));
+  assert.ok(gd.includes("/?result=exit&runId="));
 });
 test("HTML has web settlement controls", () => {
   const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
@@ -102,12 +101,15 @@ test("two-stage navigation resumes the original player without duplicating a roo
   assert.equal(roomResponse.status, 200);
   const id = JSON.parse(roomResponse.body).roomId;
   const tag = "room:" + id;
-  const wsRoute = "/ws?room=" + id + "&ruleset=crossplay-v1&protocol=1&hero=sunquan";
+  const wsRoute = "/ws?room=" + id + "&ruleset=crossplay-v1&protocol=1&hero=sunquan&atk=4&def=3&spd=1";
   const first = await hub.fetch(request(wsRoute, "GET", "websocket"));
   assert.equal(first.status, 101);
   const originalSocket = peers.get(tag)[0];
   const original = originalSocket.deserializeAttachment();
   assert.equal(original.host, true);
+  assert.equal(original.gearAttack, 4);
+  assert.equal(original.gearDefense, 3);
+  assert.equal(original.gearSpeed, 1);
   const resumeToken = original.resumeToken;
   await hub.webSocketMessage(originalSocket, JSON.stringify({ type: "start" }));
   peers.set(tag, []);

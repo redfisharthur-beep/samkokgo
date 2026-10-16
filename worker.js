@@ -217,6 +217,9 @@ export class GameHub extends DurableObject {
       moveX: 0,
       moveZ: 0,
       heroId: sanitizeHeroId(url.searchParams.get("hero")),
+      gearAttack: Math.round(clampNumber(url.searchParams.get("atk"), 0, 15)),
+      gearDefense: Math.round(clampNumber(url.searchParams.get("def"), 0, 15)),
+      gearSpeed: Math.round(clampNumber(url.searchParams.get("spd"), 0, 3)),
       resumeToken: crypto.randomUUID()
     };
     server.serializeAttachment(attachment);
@@ -542,7 +545,18 @@ function sanitizeGameState(state, roundSeconds = 720) {
     id: String(pickup?.id ?? index).slice(0, 32),
     x: clampNumber(pickup?.x, -WORLD_LIMIT, WORLD_LIMIT),
     z: clampNumber(pickup?.z, -WORLD_DEPTH_LIMIT, WORLD_DEPTH_LIMIT),
-    type: pickup?.type === "heal" ? "heal" : "energy"
+    type: ["heal", "treasure"].includes(pickup?.type) ? pickup.type : "energy"
+  })) : [];
+  const projectiles = Array.isArray(state.projectiles) ? state.projectiles.slice(0, 48).map((shot, index) => ({
+    id: String(shot?.id ?? index).slice(0, 32),
+    x: clampNumber(shot?.x, -WORLD_LIMIT - 5, WORLD_LIMIT + 5),
+    z: clampNumber(shot?.z, -WORLD_DEPTH_LIMIT - 5, WORLD_DEPTH_LIMIT + 5),
+    vx: clampNumber(shot?.vx, -20, 20),
+    vz: clampNumber(shot?.vz, -20, 20),
+    life: clampNumber(shot?.life, 0, 6),
+    delay: clampNumber(shot?.delay, 0, 1),
+    damage: clampNumber(shot?.damage, 1, 20),
+    pattern: shot?.pattern === "boss-fan" ? "boss-fan" : "arrow"
   })) : [];
   const playerProgress = {};
   if (state.playerProgress && typeof state.playerProgress === "object") {
@@ -586,6 +600,7 @@ function sanitizeGameState(state, roundSeconds = 720) {
   return {
     enemies,
     pickups,
+    projectiles,
     playerProgress,
     boss,
     finalBossDefeated: Boolean(state.finalBossDefeated),

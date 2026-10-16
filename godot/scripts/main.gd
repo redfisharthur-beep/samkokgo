@@ -61,6 +61,10 @@ var next_pickup_id := 1
 var next_enemy_shot_id := 1
 var move_speed := 255.0
 var player_vitals: Dictionary = {}
+var gear_attack_bonus := 0
+var gear_defense_bonus := 0
+var gear_speed_bonus := 0
+var current_map_id := "forest"
 
 func _ready() -> void:
 	player_pos = get_viewport_rect().size * 0.5
@@ -72,6 +76,12 @@ func _ready() -> void:
 		var requested_hero := str(JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('hero') || 'liubei'"))
 		if requested_hero in ["liubei", "caocao", "sunquan", "lvbu"]:
 			selected_hero_id = requested_hero
+		gear_attack_bonus = int(JavaScriptBridge.eval("Number(new URLSearchParams(window.location.search).get('atk') || 0)"))
+		gear_defense_bonus = int(JavaScriptBridge.eval("Number(new URLSearchParams(window.location.search).get('def') || 0)"))
+		gear_speed_bonus = int(JavaScriptBridge.eval("Number(new URLSearchParams(window.location.search).get('spd') || 0)"))
+		var requested_map := str(JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('map') || 'forest'"))
+		if requested_map in ["forest", "camp", "city"]:
+			current_map_id = requested_map
 		if invited_room.length() == 8:
 			room_id = invited_room
 			var handoff_token := str(JavaScriptBridge.eval("window.sessionStorage.getItem('samkokgo-handoff-' + (new URLSearchParams(window.location.search).get('room') || '').toUpperCase()) || ''"))
@@ -290,12 +300,12 @@ func _start_battle(_send_room_start: bool = false) -> void:
 	xp = 0
 	xp_goal = 5
 	kills = 0
-	hp = 100.0
-	max_hp = 100.0
-	damage = 20.0
+	max_hp = 100.0 + float(gear_defense_bonus * 8)
+	hp = max_hp
+	damage = 20.0 + float(gear_attack_bonus * 3)
 	attack_interval = 0.9
 	attack_range = 380.0
-	move_speed = 140.0 if crossplay_mode else 255.0
+	move_speed = (140.0 if crossplay_mode else 255.0) + float(gear_speed_bonus * 12)
 	sync_clock = 0.0
 	_sync_clock = 0.0
 	next_enemy_id = 1
@@ -448,7 +458,7 @@ func _vital_is_out(player_id: String) -> bool:
 
 func _damage_player(player_id: String, amount: float) -> void:
 	if not room_connected:
-		hp = maxf(0.0, hp - amount)
+		hp = maxf(0.0, hp - amount * (1.0 - clampf(float(gear_defense_bonus) * 0.025, 0.0, 0.35)))
 		return
 	_ensure_vital(player_id)
 	var vital: Dictionary = player_vitals[player_id]
@@ -593,8 +603,18 @@ func _update_projectiles(delta: float) -> void:
 
 	for i in range(enemy_shots.size() - 1, -1, -1):
 		var shot: Dictionary = enemy_shots[i]
+		shot["delay"] = maxf(0.0, float(shot.get("delay", 0.0)) - delta)
+		if float(shot["delay"]) > 0.0:
+			enemy_shots[i] = shot
+			continue
 		shot["pos"] = Vector2(shot["pos"]) + Vector2(shot["vel"]) * delta
 		shot["life"] = float(shot["life"]) - delta
+		if bool(shot.get("server_managed", false)):
+			if float(shot["life"]) <= 0.0:
+				enemy_shots.remove_at(i)
+			else:
+				enemy_shots[i] = shot
+			continue
 		var target_id := str(shot.get("targetId", _local_player_id()))
 		var target_pos := _player_screen_position(target_id)
 		if target_pos.distance_to(Vector2(shot["pos"])) < 21.0:
@@ -763,6 +783,7 @@ func _on_room_event(event: Dictionary) -> void:
 		_update_room_players(welcome_snapshot.get("players", []))
 		var room_data: Dictionary = welcome_snapshot.get("room", {})
 		crossplay_mode = str(room_data.get("ruleset", "")) == "crossplay-v1"
+		current_map_id = str(room_data.get("mapId", current_map_id))
 		var welcome_state: Variant = event.get("gameState")
 		if room_data.get("status", "waiting") == "playing":
 			_start_battle(false)
@@ -884,7 +905,7 @@ func _publish_game_state() -> void:
 			next_pickup_id += 1
 			drops[i] = drop
 		var world := _screen_to_world(drop["pos"])
-		state_pickups.append({"id": str(drop["id"]), "x": world.x, "z": world.y, "type": "energy"})
+		state_pickups.append({"id": str(drop["id"]), "x": world.x, "z": world.y, "type": str(drop.get("type", "energy"))})
 	var boss_state: Variant = null
 	if boss_spawned and boss_hp > 0.0:
 		boss_state = {"hp": boss_hp, "maxHp": 1600, "bossIndex": 0}
@@ -948,7 +969,25 @@ func _apply_game_state(state: Dictionary) -> void:
 		drops.append({
 			"id": str(value.get("id", "")),
 			"pos": _world_to_screen(Vector2(float(value.get("x", 0.0)), float(value.get("z", 0.0)))),
-			"value": 1
+			"value": 2 if str(value.get("type", "energy")) == "treasure" else 1,
+			"type": str(value.get("type", "energy"))
+		})
+	enemy_shots.clear()
+	for value in state.get("projectiles", []):
+		if not value is Dictionary:
+			continue
+		var world_pos := Vector2(float(value.get("x", 0.0)), float(value.get("z", 0.0)))
+		var world_velocity := Vector2(float(value.get("vx", 0.0)), float(value.get("vz", 0.0)))
+		enemy_shots.append({
+			"shotId": str(value.get("id", "")),
+			"pos": _world_to_screen(world_pos),
+			"vel": Vector2(world_velocity.x * 13.33, world_velocity.y * 13.33),
+			"life": float(value.get("life", 0.0)),
+			"delay": float(value.get("delay", 0.0)),
+			"targetId": "",
+			"authoritative": false,
+			"server_managed": true,
+			"pattern": str(value.get("pattern", "arrow"))
 		})
 	xp = int(state.get("xp", xp))
 	level = int(state.get("level", level))
@@ -1007,10 +1046,9 @@ func _finish_battle_to_web(result: String) -> void:
 	mode = "victory" if result == "victory" else "defeat"
 	if OS.has_feature("web"):
 		network.leave_room()
-		if result == "victory":
-			JavaScriptBridge.eval("window.location.replace('/?result=victory')")
-		else:
-			JavaScriptBridge.eval("window.location.replace('/?result=defeat')")
+		var safe_result := "victory" if result == "victory" else "defeat"
+		var return_path := "/?result=%s&runId=%s&map=%s" % [safe_result, room_id.uri_encode(), current_map_id.uri_encode()]
+		JavaScriptBridge.eval("window.location.replace('" + return_path + "')")
 
 func _leave_battle_to_web() -> void:
 	if navigating_to_lobby:
@@ -1018,7 +1056,7 @@ func _leave_battle_to_web() -> void:
 	navigating_to_lobby = true
 	network.leave_room()
 	if OS.has_feature("web"):
-		JavaScriptBridge.eval("window.location.replace('/?result=exit')")
+		JavaScriptBridge.eval("window.location.replace('/?result=exit&runId=" + room_id.uri_encode() + "')")
 	else:
 		mode = "lobby"
 
@@ -1049,7 +1087,7 @@ func _draw_lobby(size: Vector2) -> void:
 func _draw_battle(size: Vector2) -> void:
 	_draw_battlefield(size)
 	for drop in drops:
-		_draw_drop(drop["pos"])
+		_draw_drop(drop["pos"], str(drop.get("type", "energy")))
 	for enemy in enemies:
 		_draw_enemy(enemy)
 	for shot in shots:
@@ -1057,8 +1095,12 @@ func _draw_battle(size: Vector2) -> void:
 		draw_line(pos - Vector2(10, 4), pos + Vector2(10, 4), GOLD, 4.0, true)
 		draw_circle(pos, 4.5, Color("#f1d99b"))
 	for shot in enemy_shots:
-		draw_circle(shot["pos"], 11.0, Color("#ae766b"))
-		draw_circle(shot["pos"], 5.0, Color("#e6aa8d"))
+		var boss_bullet := str(shot.get("pattern", "")) == "boss-fan"
+		if float(shot.get("delay", 0.0)) > 0.0:
+			draw_arc(shot["pos"], 18.0 if boss_bullet else 13.0, 0.0, TAU, 12, Color("#f2c46e", 0.58), 2.0, true)
+		else:
+			draw_circle(shot["pos"], 11.0 if boss_bullet else 8.0, Color("#a9574d") if boss_bullet else Color("#ae766b"))
+			draw_circle(shot["pos"], 5.0, Color("#ffe08d") if boss_bullet else Color("#e6aa8d"))
 	for particle in particles:
 		draw_circle(particle["pos"], 2.3, particle["color"])
 	for player in remote_players:

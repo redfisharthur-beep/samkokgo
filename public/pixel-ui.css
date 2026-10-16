@@ -155,6 +155,34 @@ html,body,#app { background: #102e46; color: #f8ebca; }
 @media(prefers-reduced-motion:reduce) {.stage-hero {animation:none}}
 @keyframes hero-float {50% {margin-top:-3px}}
 
+/* Recruitment and equipment share the general picker so the home screen stays clean. */
+.picker-tabs {position:relative;z-index:2;display:flex;justify-content:center;gap:8px;margin:0 auto 12px;}
+.picker-tabs button {min-width:clamp(92px,14vw,156px);padding:8px 12px;border:2px solid #967a4d;color:#f2e0b7;background:#223a46;font-weight:900;cursor:pointer;}
+.picker-tabs button.active {border-color:#f2cc78;color:#fff0bc;background:linear-gradient(#9e5239,#66352f);box-shadow:0 3px #281e20;}
+.picker-page {position:relative;z-index:1;}
+.picker-page.hidden {display:none !important;}
+.hero-choice.locked {position:relative;filter:grayscale(.85) brightness(.62);cursor:not-allowed;}
+.hero-choice.locked::after {content:"未招募";position:absolute;left:8px;right:8px;top:42%;padding:6px 2px;border:1px solid #e0bf7b;color:#ffe5a8;background:#211f23e8;font-size:clamp(11px,1.25vw,16px);font-weight:900;}
+.progression-summary {display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 14px;width:min(540px,94%);margin:8px auto 14px;padding:10px 16px;border:2px solid #b18b55;background:#102b3ee8;text-align:left;}
+.progression-summary b {color:#f8d989;font-size:clamp(14px,1.6vw,20px);}
+.progression-summary strong {grid-column:2;grid-row:1 / span 2;color:#ffe28e;font-size:clamp(24px,4vw,39px);}
+.progression-summary small {color:#e0d4bb;font-size:clamp(10px,1.1vw,13px);}
+.recruit-preview {display:flex;align-items:center;justify-content:center;gap:14px;width:min(540px,94%);min-height:112px;margin:0 auto 12px;border:1px solid #967a4d;background:#18394a;}
+.recruit-preview canvas {width:62px;height:88px;image-rendering:pixelated;}
+.recruit-preview div {display:grid;gap:6px;text-align:left;}
+.recruit-preview b {color:#ffe3a6;font-size:clamp(16px,2.1vw,25px);}
+.recruit-preview small,.progression-note {color:#e0d4bb;font-size:clamp(10px,1.1vw,14px);}
+.progression-note {margin:12px 0 0;}
+.gear-slots {display:flex;justify-content:center;flex-wrap:wrap;gap:8px;margin:8px auto 12px;}
+.gear-slots span {padding:7px 11px;border:1px solid #b18b55;background:#203c47;color:#ffe8bb;font-size:clamp(10px,1.1vw,14px);}
+.gear-list {display:grid;gap:6px;width:min(690px,98%);max-height:28vh;overflow:auto;margin:auto;padding:2px;}
+.gear-row {display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 10px;border:1px solid #655b49;background:#172d3c;color:#eee1c4;text-align:left;font-size:clamp(10px,1.05vw,14px);}
+.gear-row.rare {border-color:#6b9cb0;color:#cce7ed;}
+.gear-row.epic {border-color:#d0a568;color:#ffe0a4;}
+.gear-row button {flex:none;padding:6px 10px;border:1px solid #d1ac68;background:#40574f;color:#fff0c7;font-weight:900;cursor:pointer;}
+.gear-row button:disabled,.picker-confirm:disabled {filter:grayscale(.7);opacity:.6;cursor:not-allowed;}
+.gear-empty {margin:10px;color:#d2c5a8;font-size:13px;}
+
 
 /* Reference-matched 16:9 title screen */
 #app:has(.home-screen:not(.hidden)) { background:#10191d; }
