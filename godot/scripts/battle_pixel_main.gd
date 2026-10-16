@@ -8,48 +8,12 @@ const PIXEL_INK := Color("#29352f")
 const PIXEL_PAPER := Color("#eee5d2")
 const PIXEL_GOLD := Color("#cfb574")
 const PIXEL_RED := Color("#b46f62")
+const BATTLEFIELD_BG: Texture2D = preload("res://assets/battlefield-pixel.webp")
 
 func _draw_battlefield(size: Vector2) -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), FIELD_BASE)
-	# Large, readable tile clusters keep the battlefield textured without visual noise.
-	var tile_w := 72.0
-	var tile_h := 56.0
-	var ox := fposmod(player_pos.x * 0.18, tile_w)
-	var oy := fposmod(player_pos.y * 0.18, tile_h)
-	for row in range(-1, int(size.y / tile_h) + 2):
-		for col in range(-1, int(size.x / tile_w) + 2):
-			var x := float(col) * tile_w - ox
-			var y := float(row) * tile_h - oy
-			var key := posmod(col * 17 + row * 29, 7)
-			if key == 0:
-				_px(Rect2(Vector2(x + 12, y + 14), Vector2(20, 8)), FIELD_LIGHT, 4)
-				_px(Rect2(Vector2(x + 48, y + 36), Vector2(12, 8)), FIELD_DARK, 4)
-			elif key == 1:
-				_px(Rect2(Vector2(x + 30, y + 8), Vector2(8, 8)), Color("#92947b"), 4)
-				_px(Rect2(Vector2(x + 34, y + 16), Vector2(8, 4)), Color("#92947b"), 4)
-			elif key == 2:
-				_px(Rect2(Vector2(x + 8, y + 42), Vector2(16, 4)), Color("#9a987d"), 4)
-				_px(Rect2(Vector2(x + 16, y + 38), Vector2(8, 4)), Color("#9a987d"), 4)
-	# Broken flagstones form a path along the lower edge of the arena.
-	var path_y := size.y * 0.76
-	for i in range(-1, int(size.x / 104.0) + 2):
-		var x := float(i) * 104.0 - fposmod(player_pos.x * 0.10, 104.0)
-		var y := path_y + sin(float(i) * 1.6) * 7.0
-		_px(Rect2(Vector2(x, y), Vector2(72, 28)), Color("#777664"), 4)
-		_px(Rect2(Vector2(x + 4, y - 4), Vector2(64, 24)), FIELD_STONE, 4)
-		_px(Rect2(Vector2(x + 12, y + 4), Vector2(24, 4)), Color("#b5aa8e"), 4)
-		_px(Rect2(Vector2(x + 44, y + 12), Vector2(16, 4)), Color("#8e876f"), 4)
-	# Low-contrast shrubs and boundary stones give the arena depth.
-	for i in range(8):
-		var x := fposmod(float(i) * 211.0 + 53.0 - player_pos.x * 0.08, size.x + 80.0) - 40.0
-		var y := 132.0 + fposmod(float(i) * 97.0 + player_pos.y * 0.06, maxf(120.0, size.y - 190.0))
-		_px(Rect2(Vector2(x, y), Vector2(28, 8)), Color("#566754"), 4)
-		_px(Rect2(Vector2(x + 4, y - 8), Vector2(20, 8)), Color("#71866f"), 4)
-		_px(Rect2(Vector2(x + 8, y - 12), Vector2(12, 4)), Color("#89957d"), 4)
-	for i in range(6):
-		var x := fposmod(float(i) * 263.0 + 170.0 - player_pos.x * 0.11, size.x + 40.0) - 20.0
-		_px(Rect2(Vector2(x, size.y - 84.0), Vector2(20, 12)), Color("#756f60"), 4)
-		_px(Rect2(Vector2(x + 4, size.y - 88.0), Vector2(12, 8)), Color("#a39a80"), 4)
+	draw_texture_rect(BATTLEFIELD_BG, Rect2(Vector2.ZERO, size), false)
+	# A soft dusk wash keeps the detailed ground art calm beneath combat effects.
+	draw_rect(Rect2(Vector2.ZERO, size), Color("#24332c", 0.10))
 
 func _draw_hero(pos: Vector2, scale: float, robe: Color, hair: Color, trim: Color, angle: float) -> void:
 	var u := maxf(2.0, 3.0 * scale)
@@ -129,48 +93,83 @@ func _draw_drop(pos: Vector2) -> void:
 
 func _draw_hud(size: Vector2) -> void:
 	var compact := size.x < 720.0
-	var bar_h := 94.0 if not compact else 86.0
-	_px(Rect2(Vector2.ZERO, Vector2(size.x, bar_h)), Color("#283832"), 4)
-	_px(Rect2(Vector2(0, bar_h - 4), Vector2(size.x, 4)), Color("#c2a76d"), 4)
-	# Hero panel.
-	var left_w := minf(340.0, size.x * 0.38)
-	_px(Rect2(Vector2(12, 10), Vector2(left_w, bar_h - 20)), Color("#35483e"), 4)
-	_px(Rect2(Vector2(16, 14), Vector2(5, bar_h - 28)), PIXEL_GOLD, 4)
-	_pixel_text(Vector2(31, 36), "劉備", 24 if not compact else 20, PIXEL_PAPER)
-	_pixel_text(Vector2(112, 34), "Lv.%d" % level, 18 if not compact else 16, Color("#d5c397"))
-	_pixel_text(Vector2(31, 61), "%d / %d" % [int(hp), int(max_hp)], 16 if not compact else 14, PIXEL_PAPER)
-	var hp_w := maxf(105.0, left_w - 139.0)
-	_pixel_bar(Rect2(Vector2(126, 45), Vector2(hp_w, 17)), hp / maxf(1.0, max_hp), PIXEL_RED)
-	# Large centered timer with hard pixel shadow.
-	var timer := int(maxf(0.0, 360.0 - elapsed))
-	var time_text := "%02d:%02d" % [timer / 60, timer % 60]
-	_pixel_text(Vector2(size.x * 0.5 - 72, 43), time_text, 35 if not compact else 29, PIXEL_PAPER, HORIZONTAL_ALIGNMENT_CENTER, 144)
-	_pixel_text(Vector2(size.x * 0.5 - 52, 67), "戰場計時", 13, Color("#cfbc91"), HORIZONTAL_ALIGNMENT_CENTER, 104)
-	# Team indicators remain square and legible at phone widths.
-	var team_x := size.x - 178.0 if size.x >= 720.0 else size.x - 114.0
-	var team_w := size.x - team_x - 10.0
-	_pixel_text(Vector2(team_x, 28), "隊伍 %d/6" % (remote_players.size() + 1), 17 if not compact else 14, PIXEL_PAPER, HORIZONTAL_ALIGNMENT_LEFT, team_w)
-	for i in range(mini(6, remote_players.size() + 1)):
-		var x := team_x + float(i) * (20.0 if compact else 24.0)
-		var active := true
-		if i > 0:
-			var player_id := str(remote_players[i - 1].get("id", ""))
-			active = not _vital_is_out(player_id)
-		_px(Rect2(Vector2(x, 48), Vector2(16, 16)), Color("#79927c") if active else Color("#775d56"), 4)
-		_px(Rect2(Vector2(x + 4, 52), Vector2(8, 8)), Color("#e0d1b7"), 4)
-		if i > 0:
-			var player_id := str(remote_players[i - 1].get("id", ""))
-			var vital: Dictionary = player_vitals.get(player_id, {})
-			_pixel_bar(Rect2(Vector2(x, 67), Vector2(16, 7)), float(vital.get("hp", 0.0)) / maxf(1.0, float(vital.get("maxHp", 100.0))), PIXEL_RED)
-	# XP becomes an unmistakable strip at the foot of the HUD.
-	var xp_rect := Rect2(Vector2(20, bar_h - 11), Vector2(maxf(120.0, size.x - 40.0), 5))
-	_px(xp_rect, Color("#515d50"), 4)
-	_px(Rect2(xp_rect.position, Vector2(xp_rect.size.x * clampf(float(xp) / maxf(1.0, float(xp_goal)), 0.0, 1.0), xp_rect.size.y)), Color("#9bb58d"), 4)
+	var bar_h := 94.0 if not compact else 84.0
+	_frame_panel(Rect2(Vector2(8, 7), Vector2(size.x - 16, bar_h - 11)), Color("#293932"))
+	if compact:
+		# Compact phone layout keeps the timer, hero and team apart.
+		_px(Rect2(Vector2(18, 16), Vector2(30, 30)), Color("#786746"), 4)
+		_px(Rect2(Vector2(22, 20), Vector2(22, 22)), Color("#82927d"), 4)
+		_px(Rect2(Vector2(26, 22), Vector2(14, 11)), Color("#d8b38e"), 4)
+		_px(Rect2(Vector2(24, 20), Vector2(18, 6)), Color("#393c35"), 4)
+		_pixel_text(Vector2(55, 34), "劉備", 19, PIXEL_PAPER)
+		var timer := int(maxf(0.0, 360.0 - elapsed))
+		_pixel_text(Vector2(size.x * 0.5 - 49, 35), "%02d:%02d" % [timer / 60, timer % 60], 25, PIXEL_GOLD, HORIZONTAL_ALIGNMENT_CENTER, 98)
+		_px(Rect2(Vector2(size.x - 48, 19), Vector2(24, 24)), Color("#728878"), 4)
+		_px(Rect2(Vector2(size.x - 42, 25), Vector2(12, 12)), Color("#ead9b4"), 4)
+		_pixel_text(Vector2(size.x - 91, 37), "%d/6" % (remote_players.size() + 1), 14, PIXEL_PAPER, HORIZONTAL_ALIGNMENT_RIGHT, 38)
+		_pixel_text(Vector2(23, 57), "%d/%d" % [int(hp), int(max_hp)], 13, PIXEL_PAPER)
+		_pixel_bar(Rect2(Vector2(86, 49), Vector2(maxf(70.0, size.x - 111.0), 13)), hp / maxf(1.0, max_hp), PIXEL_RED)
+		_px(Rect2(Vector2(20, 72), Vector2(size.x - 40, 4)), Color("#53624f"), 4)
+		_px(Rect2(Vector2(20, 72), Vector2((size.x - 40) * clampf(float(xp) / maxf(1.0, float(xp_goal)), 0.0, 1.0), 4)), Color("#a6bd91"), 4)
+	else:
+		var left_w := minf(354.0, size.x * 0.32)
+		var right_w := minf(204.0, size.x * 0.19)
+		var left_rect := Rect2(Vector2(16, 15), Vector2(left_w, bar_h - 28))
+		var right_rect := Rect2(Vector2(size.x - right_w - 16, 15), Vector2(right_w, bar_h - 28))
+		_frame_panel(left_rect, Color("#35483e"))
+		_frame_panel(right_rect, Color("#35483e"))
+		# A compact portrait tile anchors the player status block.
+		_px(Rect2(left_rect.position + Vector2(9, 7), Vector2(48, 50)), Color("#c3a368"), 4)
+		_px(Rect2(left_rect.position + Vector2(13, 11), Vector2(40, 42)), Color("#718575"), 4)
+		_px(Rect2(left_rect.position + Vector2(18, 13), Vector2(30, 17)), Color("#3b4038"), 4)
+		_px(Rect2(left_rect.position + Vector2(20, 22), Vector2(26, 20)), Color("#d7b18e"), 4)
+		_px(Rect2(left_rect.position + Vector2(17, 38), Vector2(32, 11)), Color("#695847"), 4)
+		_px(Rect2(left_rect.position + Vector2(24, 40), Vector2(18, 5)), Color("#a58a60"), 4)
+		var tx := left_rect.position.x + 68.0
+		_pixel_text(Vector2(tx, 37), "劉備", 23, PIXEL_PAPER)
+		_pixel_text(Vector2(tx + 77, 36), "Lv.%d" % level, 16, Color("#d8c397"))
+		_pixel_text(Vector2(tx, 58), "%d / %d" % [int(hp), int(max_hp)], 14, PIXEL_PAPER)
+		_pixel_bar(Rect2(Vector2(tx, 64), Vector2(left_rect.size.x - 81, 10)), hp / maxf(1.0, max_hp), PIXEL_RED)
+		# Center timer sits in its own framed plaque.
+		var timer := int(maxf(0.0, 360.0 - elapsed))
+		var clock_rect := Rect2(Vector2(size.x * 0.5 - 79, 15), Vector2(158, bar_h - 28))
+		_frame_panel(clock_rect, Color("#35483e"))
+		_pixel_text(Vector2(clock_rect.position.x, 47), "%02d:%02d" % [timer / 60, timer % 60], 33, PIXEL_PAPER, HORIZONTAL_ALIGNMENT_CENTER, clock_rect.size.x)
+		_pixel_text(Vector2(clock_rect.position.x, 67), "戰場計時", 13, Color("#cfbc91"), HORIZONTAL_ALIGNMENT_CENTER, clock_rect.size.x)
+		_pixel_text(Vector2(right_rect.position.x + 12, 35), "隊伍", 17, PIXEL_PAPER)
+		_pixel_text(Vector2(right_rect.position.x + right_rect.size.x - 58, 35), "%d / 6" % (remote_players.size() + 1), 15, Color("#d8c397"), HORIZONTAL_ALIGNMENT_RIGHT, 48)
+		for i in range(6):
+			var x := right_rect.position.x + 12.0 + float(i) * 27.0
+			var present := i <= remote_players.size()
+			var active := present
+			if i > 0 and present:
+				active = not _vital_is_out(str(remote_players[i - 1].get("id", "")))
+			_px(Rect2(Vector2(x, 47), Vector2(20, 20)), Color("#748a77") if active else Color("#554f47"), 4)
+			_px(Rect2(Vector2(x + 5, 51), Vector2(10, 7)), Color("#e1d0ae") if present else Color("#746d5e"), 4)
+			if i > 0 and present:
+				var player_id := str(remote_players[i - 1].get("id", ""))
+				var vital: Dictionary = player_vitals.get(player_id, {})
+				_pixel_bar(Rect2(Vector2(x + 1, 69), Vector2(18, 4)), float(vital.get("hp", 0.0)) / maxf(1.0, float(vital.get("maxHp", 100.0))), PIXEL_RED)
+		# Experience strip uses the full header width with a brighter fill.
+		var xp_rect := Rect2(Vector2(22, bar_h - 12), Vector2(size.x - 44, 4))
+		_px(xp_rect, Color("#596651"), 4)
+		_px(Rect2(xp_rect.position, Vector2(xp_rect.size.x * clampf(float(xp) / maxf(1.0, float(xp_goal)), 0.0, 1.0), xp_rect.size.y)), Color("#a6bd91"), 4)
 	if boss_spawned and boss_hp > 0.0:
-		var boss_rect := Rect2(Vector2(size.x * 0.30, bar_h + 14), Vector2(size.x * 0.40, 17))
-		_px(Rect2(boss_rect.position - Vector2(5, 5), boss_rect.size + Vector2(10, 10)), PIXEL_INK, 4)
+		var boss_rect := Rect2(Vector2(size.x * 0.30, bar_h + 16), Vector2(size.x * 0.40, 17))
+		_frame_panel(Rect2(boss_rect.position - Vector2(8, 21), boss_rect.size + Vector2(16, 30)), Color("#382f2b"))
+		_pixel_text(Vector2(boss_rect.position.x, boss_rect.position.y - 5), "董卓", 17, PIXEL_PAPER, HORIZONTAL_ALIGNMENT_CENTER, boss_rect.size.x)
 		_pixel_bar(boss_rect, boss_hp / 1600.0, PIXEL_RED)
-		_pixel_text(Vector2(boss_rect.position.x, boss_rect.position.y - 7), "董卓", 17, PIXEL_PAPER, HORIZONTAL_ALIGNMENT_CENTER, boss_rect.size.x)
+
+func _frame_panel(rect: Rect2, fill: Color) -> void:
+	# Layered pixel edging echoes the lobby frame and keeps text readable.
+	_px(Rect2(rect.position + Vector2(0, 4), rect.size), Color("#17211d"), 4)
+	_px(rect, Color("#bba46f"), 4)
+	_px(Rect2(rect.position + Vector2(4, 4), rect.size - Vector2(8, 8)), Color("#26342e"), 4)
+	_px(Rect2(rect.position + Vector2(8, 8), rect.size - Vector2(16, 16)), fill, 4)
+	_px(Rect2(rect.position + Vector2(12, 8), Vector2(maxf(0.0, rect.size.x - 24), 3)), Color("#e3d2a2", 0.7), 4)
+	for corner in [Vector2.ZERO, Vector2(rect.size.x - 8, 0), Vector2(0, rect.size.y - 8), rect.size - Vector2(8, 8)]:
+		_px(Rect2(rect.position + corner, Vector2(8, 8)), Color("#dec387"), 4)
+		_px(Rect2(rect.position + corner + Vector2(2, 2), Vector2(4, 4)), Color("#574b3b"), 4)
 
 func _draw_bar(rect: Rect2, ratio: float, fill: Color) -> void:
 	_pixel_bar(rect, ratio, fill)
