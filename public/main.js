@@ -917,8 +917,11 @@ function renderVitals() {
   const health = vital ? vital.hp / vital.maxHp * 100 : 100;
   ui.healthFill.style.width = `${clamp(health, 0, 100)}%`;
   ui.reviveHint.classList.toggle("hidden", !vital?.downed);
-  ui.specialAbility.style.setProperty("--charge", `${appState.energy}%`);
-  const ready = appState.energy >= 100;
+  const charge = RULESET === "crossplay-v1"
+    ? Math.max(0, Math.min(100, 100 - Math.max(0, (appState.abilityAvailableAt ?? 0) - Date.now()) / 200))
+    : appState.energy;
+  ui.specialAbility.style.setProperty("--charge", `${charge}%`);
+  const ready = RULESET === "crossplay-v1" ? (appState.abilityAvailableAt ?? 0) <= Date.now() : appState.energy >= 100;
   ui.specialAbility.disabled = !ready || appState.abilityPending || appState.socket?.readyState !== WebSocket.OPEN;
   ui.specialAbility.classList.toggle("ready", ready && !appState.abilityPending);
   ui.specialAbility.setAttribute("aria-label", ready ? "範圍絕技，能量已滿" : "範圍絕技，能量未滿");
@@ -1126,6 +1129,14 @@ function setPlayers(players) {
     if (player.id === appState.selfId) {
       appState.host = Boolean(player.host);
       if (appState.screen === "room") localPlayer.group.position.set(player.x, 0, player.z);
+      if (RULESET === "crossplay-v1" && appState.screen === "game") {
+        const dx = player.x - localPlayer.group.position.x;
+        const dz = player.z - localPlayer.group.position.z;
+        if (Math.hypot(dx, dz) > 1.5) {
+          localPlayer.group.position.x += dx * 0.35;
+          localPlayer.group.position.z += dz * 0.35;
+        }
+      }
       continue;
     }
     let visual = playerVisuals.get(player.id);
@@ -1157,6 +1168,7 @@ function applyGameState(state) {
   appState.level = Math.max(1, Number(ownProgress?.level ?? state.level) || 1);
   if (state.playerVitals && typeof state.playerVitals === "object") appState.playerVitals = state.playerVitals;
   appState.energy = clamp(Number(state.energy) || 0, 0, 100);
+  if (RULESET === "crossplay-v1") appState.abilityAvailableAt = state.cooldowns?.[appState.selfId] ?? 0;
   appState.finalBossDefeated = Boolean(state.finalBossDefeated);
   if (Array.isArray(state.bossesSpawned)) appState.bossesSpawned = new Set(state.bossesSpawned);
   appState.abilityPending = false;
@@ -1345,6 +1357,7 @@ function clearRun() {
   appState.finalBossDefeated = false;
   appState.playerVitals = {};
   appState.energy = 0;
+  appState.abilityAvailableAt = 0;
   appState.abilityPending = false;
   appState.nextTeamHit = 0;
   enemyGroup.clear();
@@ -1882,6 +1895,7 @@ function installControls() {
   ui.specialAbility.addEventListener("click", () => {
     if (ui.specialAbility.disabled || appState.socket?.readyState !== WebSocket.OPEN) return;
     appState.abilityPending = true;
+    if (RULESET === "crossplay-v1") appState.abilityAvailableAt = Date.now() + 20000;
     renderVitals();
     appState.socket.send(JSON.stringify({ type: "ability" }));
     setTimeout(() => {

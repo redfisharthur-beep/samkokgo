@@ -48,6 +48,7 @@ var attack_flash := 0.0
 var is_host := false
 var room_connected := false
 var crossplay_mode := false
+var boss_max_hp := 1600.0
 var sync_clock := 0.0
 var _sync_clock := 0.0
 var next_enemy_id := 1
@@ -149,6 +150,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event is InputEventKey:
 		var key := event as InputEventKey
+		if crossplay_mode and mode == "battle" and key.pressed and not key.echo and key.keycode == KEY_SPACE:
+			network.send_action({"type": "ability"})
 		if key.keycode in [KEY_W, KEY_UP]: keys.y = -1.0 if key.pressed else 0.0
 		if key.keycode in [KEY_S, KEY_DOWN]: keys.y = 1.0 if key.pressed else 0.0
 		if key.keycode in [KEY_A, KEY_LEFT]: keys.x = -1.0 if key.pressed else 0.0
@@ -830,6 +833,7 @@ func _apply_game_state(state: Dictionary) -> void:
 	boss_spawned = state.get("boss") is Dictionary and not state.get("boss").is_empty()
 	if boss_spawned:
 		boss_hp = float(state["boss"].get("hp", 0.0))
+		boss_max_hp = float(state["boss"].get("maxHp", 1600.0))
 	var previous_enemy_positions: Dictionary = {}
 	for old_enemy in enemies:
 		previous_enemy_positions[str(old_enemy.get("id", ""))] = old_enemy.get("pos", Vector2.ZERO)
@@ -849,7 +853,7 @@ func _apply_game_state(state: Dictionary) -> void:
 			"id": enemy_id,
 			"pos": render_pos,
 			"hp": hp_value,
-			"max_hp": 1600.0 if is_boss else 42.0,
+			"max_hp": boss_max_hp if is_boss else float(enemy.get("maxHp", 42.0)),
 			"speed": 0.0,
 			"ranged": str(enemy.get("kind", "")) == "archer",
 			"boss": is_boss,
@@ -1058,7 +1062,7 @@ func _draw_hud(size: Vector2) -> void:
 	var time_text := "%02d:%02d" % [timer / 60, timer % 60]
 	draw_string(UI_FONT, Vector2(size.x * 0.5 - 60, 42), time_text, HORIZONTAL_ALIGNMENT_CENTER, 120, 25, PAPER)
 	if boss_spawned and boss_hp > 0.0:
-		_draw_bar(Rect2(size.x * 0.3, 91, size.x * 0.4, 13), boss_hp / 1600.0, Color("#b66e5e"))
+		_draw_bar(Rect2(size.x * 0.3, 91, size.x * 0.4, 13), boss_hp / maxf(1.0, boss_max_hp), Color("#b66e5e"))
 		draw_string(UI_FONT, Vector2(size.x * 0.5 - 60, 121), "董卓", HORIZONTAL_ALIGNMENT_CENTER, 120, 16, PAPER)
 	for i in range(mini(6, remote_players.size())):
 		var player_id := str(remote_players[i].get("id", ""))

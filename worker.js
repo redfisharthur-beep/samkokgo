@@ -224,6 +224,9 @@ export class GameHub extends DurableObject {
     room.hostId = hostId;
     rooms[roomId] = room;
     await this.ctx.storage.put("rooms", rooms);
+    if (room.ruleset === "crossplay-v1" && room.status === "playing") {
+      await this.ctx.storage.setAlarm(Date.now() + 250);
+    }
     server.send(JSON.stringify({ type: "welcome", selfId: playerId, resumeToken: attachment.resumeToken, snapshot: this.snapshot(room, [...existing, server]), gameState: room.gameState ?? null }));
     this.broadcast(roomId, { type: "presence", snapshot: this.snapshot(room, [...existing, server]) }, server);
     return new Response(null, { status: 101, webSocket: client });
