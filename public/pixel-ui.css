@@ -233,3 +233,12 @@ html,body,#app { background: #102e46; color: #f8ebca; }
   content:none !important;
   display:none !important;
 }
+
+
+/* Transparent click targets must not blur the artwork beneath them. */
+.home-screen #pickHero,
+.home-screen #quickJoin,
+.home-screen #refreshRooms {
+  backdrop-filter:none !important;
+  -webkit-backdrop-filter:none !important;
+}
