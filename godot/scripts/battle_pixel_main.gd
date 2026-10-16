@@ -160,6 +160,31 @@ func _draw_hud(size: Vector2) -> void:
 		_pixel_text(Vector2(boss_rect.position.x, boss_rect.position.y - 5), "董卓", 17, PIXEL_PAPER, HORIZONTAL_ALIGNMENT_CENTER, boss_rect.size.x)
 		_pixel_bar(boss_rect, boss_hp / maxf(1.0, boss_max_hp), PIXEL_RED)
 
+
+	if crossplay_mode:
+		var ability_position := Vector2(size.x - 90.0, size.y - 90.0)
+		var available := ability_ready_at <= Time.get_unix_time_from_system() * 1000.0
+		_draw_ability_button(ability_position, available)
+
+func _draw_ability_button(center: Vector2, available: bool) -> void:
+	draw_circle(center + Vector2(0, 4), 44.0, Color("#17211d", 0.82))
+	draw_circle(center, 42.0, PIXEL_GOLD if available else Color("#82745a"))
+	draw_circle(center, 36.0, Color("#202c26"))
+	draw_circle(center, 31.0, Color("#536d5a") if available else Color("#37443d"))
+	draw_arc(center, 31.0, PI, TAU, 16, Color("#f3dfa9", 0.72), 2.0, true)
+	_pixel_text(center + Vector2(-35, 7), "絕技" if available else "冷卻", 18, PIXEL_PAPER, HORIZONTAL_ALIGNMENT_CENTER, 70.0)
+	_pixel_text(center + Vector2(-43, 55), "SPACE / 點擊", 11, PIXEL_PAPER, HORIZONTAL_ALIGNMENT_CENTER, 86.0)
+
+func _draw_control_guide(size: Vector2) -> void:
+	var compact := size.x < 720.0
+	var guide_w := minf(302.0, size.x * 0.52)
+	var guide_h := 48.0 if not compact else 42.0
+	var rect := Rect2(Vector2(14, size.y - guide_h - 14), Vector2(guide_w, guide_h))
+	_frame_panel(rect, Color("#334238"))
+	var primary := "拖曳任意位置移動" if compact else "WASD / 方向鍵　·　拖曳移動"
+	var secondary := "自動攻擊　·　點擊右下絕技"
+	_pixel_text(rect.position + Vector2(12, 24), primary, 13 if compact else 14, PIXEL_PAPER)
+	_pixel_text(rect.position + Vector2(12, 40), secondary, 11, Color("#d9c99f"))
 func _frame_panel(rect: Rect2, fill: Color) -> void:
 	# Layered pixel edging echoes the lobby frame and keeps text readable.
 	_px(Rect2(rect.position + Vector2(0, 4), rect.size), Color("#17211d"), 4)
