@@ -4,7 +4,8 @@ export const PROTOCOL_VERSION = 1;
 export const DEFAULT_RULESET = "threejs-alpha";
 export const RULESETS = Object.freeze({
   "threejs-alpha": Object.freeze({ engine: "threejs", roundSeconds: 720 }),
-  "godot-alpha": Object.freeze({ engine: "godot", roundSeconds: 360 })
+  "godot-alpha": Object.freeze({ engine: "godot", roundSeconds: 360 }),
+  "crossplay-v1": Object.freeze({ engine: "mixed", roundSeconds: 360 })
 });
 export function resolveRuleset(value) {
   if (value == null || value === "") return DEFAULT_RULESET;

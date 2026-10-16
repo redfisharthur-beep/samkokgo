@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { PROTOCOL_VERSION, RULESETS, resolveRuleset, sameRuleset, durationForRuleset } from "./shared/protocol.mjs";
+import { makeBattle, syncPlayers, movePlayer, advanceBattle, chooseUpgrade, useAbility, HERO_STATS } from "./shared/crossplay.mjs";
 
 const MAX_PLAYERS = 6;
 const WORLD_LIMIT = 48;
@@ -13,17 +14,17 @@ export default {
       const hub = env.GAME_HUB.get(id);
       return hub.fetch(request);
     }
-    if (url.pathname === "/index.wasm") {
-      return serveWasm(env, request.url);
+    if (url.pathname === "/index.wasm" || url.pathname === "/godot/index.wasm") {
+      return serveWasm(env, request.url, url.pathname.startsWith("/godot/") ? "/godot" : "");
     }
     return env.ASSETS.fetch(request);
   }
 };
 
-async function serveWasm(env, requestUrl) {
+async function serveWasm(env, requestUrl, prefix = "") {
   const assetHeaders = new Headers({ "accept-encoding": "identity" });
   const manifestResponse = await env.ASSETS.fetch(
-    new Request(new URL("/index.wasm.parts.json", requestUrl), { headers: assetHeaders })
+    new Request(new URL(prefix + "/index.wasm.parts.json", requestUrl), { headers: assetHeaders })
   );
   if (!manifestResponse.ok) return new Response("WebAssembly parts are unavailable.", { status: 503 });
 
@@ -244,10 +245,43 @@ export class GameHub extends DurableObject {
     if (message.type === "input") {
       attachment.moveX = clampNumber(message.x, -1, 1);
       attachment.moveZ = clampNumber(message.z, -1, 1);
-      attachment.x = clampNumber(message.px, -WORLD_LIMIT, WORLD_LIMIT);
-      attachment.z = clampNumber(message.pz, -WORLD_DEPTH_LIMIT, WORLD_DEPTH_LIMIT);
+      if (room.ruleset === "crossplay-v1") {
+        const now = Date.now();
+        const dt = Math.min(0.25, Math.max(0, (now - (attachment.lastMoveAt ?? now - 100)) / 1000));
+        const vital = room.gameState?.playerVitals?.[attachment.playerId];
+        if (!vital?.downed && !vital?.eliminated && room.status === "playing") {
+          const speedRank = room.gameState?.playerProgress?.[attachment.playerId]?.upgrades?.speed ?? 0;
+          const oldStats = HERO_STATS[attachment.heroId] ?? HERO_STATS.liubei;
+          movePlayer(attachment, attachment.moveX, attachment.moveZ, dt * (1 + speedRank * 0.08));
+        }
+        attachment.lastMoveAt = now;
+      } else {
+        attachment.x = clampNumber(message.px, -WORLD_LIMIT, WORLD_LIMIT);
+        attachment.z = clampNumber(message.pz, -WORLD_DEPTH_LIMIT, WORLD_DEPTH_LIMIT);
+      }
       socket.serializeAttachment(attachment);
       this.broadcast(room.id, { type: "players", players: this.playerList(room.id, room) });
+      return;
+    }
+    // Crossplay simulates attacks and pickups on the server, never from clients.
+    if (room.ruleset === "crossplay-v1" &&
+        ["game-state", "player-pickup", "player-attack", "attack-fx", "enemy-shot-fx"].includes(message.type)) return;
+    if (room.ruleset === "crossplay-v1" && message.type === "level-choice" && room.status === "playing") {
+      if (chooseUpgrade(room.gameState, attachment.playerId, String(message.upgradeId ?? ""))) {
+        rooms[room.id] = room;
+        await this.ctx.storage.put("rooms", rooms);
+        this.broadcast(room.id, { type: "game-state", state: room.gameState });
+      }
+      return;
+    }
+    if (room.ruleset === "crossplay-v1" && message.type === "ability" && room.status === "playing") {
+      const participants = this.ctx.getWebSockets(tagFor(room.id)).map(s => s.deserializeAttachment()).filter(Boolean);
+      if (useAbility(room.gameState, attachment.playerId, participants)) {
+        this.broadcast(room.id, { type: "ability", playerId: attachment.playerId, x: attachment.x, z: attachment.z });
+        this.broadcast(room.id, { type: "game-state", state: room.gameState });
+        rooms[room.id] = room;
+        await this.ctx.storage.put("rooms", rooms);
+      }
       return;
     }
     if (message.type === "player-pickup" && room.status === "playing") {
@@ -344,12 +378,44 @@ export class GameHub extends DurableObject {
     if (message.type === "start" && attachment.playerId === room.hostId && room.status === "waiting") {
       room.status = "playing";
       room.startedAt = Date.now();
-      room.gameState = null;
+      room.gameState = room.ruleset === "crossplay-v1" ? makeBattle(room.startedAt) : null;
       room.gameStateSavedAt = 0;
+      if (room.gameState) {
+        syncPlayers(room.gameState, this.ctx.getWebSockets(tagFor(room.id)).map(s => s.deserializeAttachment()).filter(Boolean));
+        await this.ctx.storage.setAlarm(Date.now() + 250);
+      }
       rooms[room.id] = room;
       await this.ctx.storage.put("rooms", rooms);
       this.broadcast(room.id, { type: "start", startedAt: room.startedAt, duration: durationForRuleset(room.ruleset), mapId: room.mapId, difficulty: room.difficulty });
+      if (room.gameState) this.broadcast(room.id, { type: "game-state", state: room.gameState });
     }
+  }
+
+  async alarm() {
+    const rooms = (await this.ctx.storage.get("rooms")) ?? {};
+    const now = Date.now();
+    let running = false;
+    let changed = false;
+    for (const room of Object.values(rooms)) {
+      if (room.ruleset !== "crossplay-v1" || room.status !== "playing") continue;
+      const participants = this.ctx.getWebSockets(tagFor(room.id)).map(s => s.deserializeAttachment()).filter(Boolean);
+      if (!participants.length) continue;
+      running = true;
+      room.gameState ??= makeBattle(room.startedAt ?? now);
+      const lastTick = room.lastTickAt ?? (now - 250);
+      advanceBattle(room.gameState, participants, Math.max(0, (now - lastTick) / 1000), now, room.difficulty);
+      room.lastTickAt = now;
+      this.broadcast(room.id, { type: "game-state", state: room.gameState });
+      if (room.gameState.result) {
+        room.status = "ended";
+        room.locked = true;
+        this.broadcast(room.id, { type: "battle-result", result: room.gameState.result });
+        this.broadcast(room.id, { type: "room", room: this.publicRoom(room), players: this.playerList(room.id, room) });
+      }
+      changed = true;
+    }
+    if (changed) await this.ctx.storage.put("rooms", rooms);
+    if (running) await this.ctx.storage.setAlarm(now + 250);
   }
 
   async webSocketClose(socket, code, reason) {
@@ -428,7 +494,7 @@ export class GameHub extends DurableObject {
     if (room.status === "waiting") return true;
     if (room.status !== "playing" || !room.startedAt) return false;
     const elapsed = Date.now() - room.startedAt;
-    return elapsed <= 6 * 60 * 1000 && !room.gameState?.boss;
+    return elapsed <= Math.min(6 * 60 * 1000, durationForRuleset(room.ruleset) * 500) && !room.gameState?.boss;
   }
 
   broadcast(roomId, payload, except = null) {
