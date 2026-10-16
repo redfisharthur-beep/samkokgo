@@ -31,10 +31,10 @@ jobs:
           echo "GODOT=/tmp/godot/Godot_v4.3-stable_linux.x86_64" >> "$GITHUB_ENV"
 
       - name: Import and parse Godot project
-        run: "$GODOT" --headless --editor --path godot --quit
+        run: $GODOT --headless --editor --path godot --quit
 
       - name: Launch prototype in headless mode
-        run: "$GODOT" --headless --path godot --quit-after 3
+        run: $GODOT --headless --path godot --quit-after 3
 
       - name: Install Godot 4.3 Web export templates
         shell: bash
