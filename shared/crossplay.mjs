@@ -1,0 +1,181 @@
+/**
+ * Crossplay v1 authoritative battlefield.
+ *
+ * Cloudflare Durable Object owns health, spawns, XP, upgrades and victory.
+ * Clients may submit movement direction and upgrade choices only.
+ * No Godot or Three.js frame-loop damage is trusted in this mode.
+ */
+export const COOP_SECONDS = 360;
+export const WORLD_X = 46;
+export const WORLD_Z = 25;
+export const ENEMY_LIMIT = 30;
+export const UPGRADE_IDS = ["power", "tempo", "reach", "speed"];
+export const HERO_STATS = Object.freeze({
+  liubei: { speed: 10.5, damage: 8, interval: 0.85, range: 8 },
+  caocao: { speed: 9.5, damage: 12, interval: 1.0, range: 8.5 },
+  sunquan: { speed: 11, damage: 7, interval: 0.60, range: 9 },
+  lvbu: { speed: 9.5, damage: 16, interval: 1.05, range: 6.5 }
+});
+const finite = (v, fallback = 0) => Number.isFinite(v) ? v : fallback;
+const bounded = (v, a, b) => Math.max(a, Math.min(b, finite(v)));
+const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+export function makeProgress() {
+  return { xp: 0, level: 1, upgrades: { power: 0, tempo: 0, reach: 0, speed: 0 }, pendingChoices: [] };
+}
+export function makeBattle(now = Date.now()) {
+  return { schema: "crossplay-v1", elapsed: 0, startedAt: now, nextEnemy: 1, nextPickup: 1,
+    spawnClock: 0, boss: null, bossSpawned: false, finalBossDefeated: false,
+    bossesSpawned: [], energy: 0, enemies: [], pickups: [], playerProgress: {},
+    playerVitals: {}, cooldowns: {}, result: null, xp: 0, level: 1 };
+}
+export function syncPlayers(state, players) {
+  for (const p of players) {
+    if (!p.playerId) continue;
+    state.playerProgress[p.playerId] ??= makeProgress();
+    state.playerVitals[p.playerId] ??= { hp: 100, maxHp: 100, downed: false,
+      eliminated: false, reviveProgress: 0, downedAt: 0 };
+  }
+}
+function gainXp(state, players, points) {
+  for (const p of players) {
+    const progress = state.playerProgress[p.playerId];
+    if (!progress) continue;
+    progress.xp += points;
+    let safety = 0;
+    while (progress.xp >= 5 + (progress.level - 1) * 2 && safety++ < 8) {
+      progress.xp -= 5 + (progress.level - 1) * 2;
+      progress.level++;
+      const offers = UPGRADE_IDS.filter(id => progress.upgrades[id] < 5);
+      if (offers.length) progress.pendingChoices.push(offers.slice(0, 3));
+    }
+  }
+}
+export function chooseUpgrade(state, playerId, upgradeId) {
+  const progress = state.playerProgress[playerId];
+  if (!progress || !UPGRADE_IDS.includes(upgradeId)) return false;
+  const offered = progress.pendingChoices[0];
+  if (!offered?.includes(upgradeId) || progress.upgrades[upgradeId] >= 5) return false;
+  progress.upgrades[upgradeId]++;
+  progress.pendingChoices.shift();
+  return true;
+}
+export function movePlayer(player, dx, dz, seconds) {
+  const mag = Math.hypot(dx, dz);
+  if (mag < 0.001) return player;
+  const speed = (HERO_STATS[player.heroId] ?? HERO_STATS.liubei).speed;
+  const dt = bounded(seconds, 0, 0.25);
+  player.x = bounded(player.x + dx / Math.max(1, mag) * speed * dt, -WORLD_X, WORLD_X);
+  player.z = bounded(player.z + dz / Math.max(1, mag) * speed * dt, -WORLD_Z, WORLD_Z);
+  return player;
+}
+function spawn(state, x, z, kind = "grunt", difficulty = "normal", players = 1) {
+  if (state.enemies.length >= ENEMY_LIMIT) return;
+  const scale = { easy: 0.85, normal: 1, hard: 1.3 }[difficulty] ?? 1;
+  const base = { grunt: 20, runner: 15, archer: 19, elite: 42, boss: 600 }[kind] ?? 20;
+  const hp = Math.round((base + (kind === "boss" ? players * 100 : 0)) * scale);
+  const id = "e-" + state.nextEnemy++;
+  state.enemies.push({ id, x: bounded(x, -WORLD_X, WORLD_X), z: bounded(z, -WORLD_Z, WORLD_Z),
+    hp, maxHp: hp, kind, bossIndex: kind === "boss" ? 0 : -1, elite: kind === "elite" });
+  if (kind === "boss") state.boss = { hp, maxHp: hp, bossIndex: 0 };
+}
+function killEnemy(state, enemy) {
+  state.enemies = state.enemies.filter(e => e !== enemy);
+  if (enemy.kind === "boss") { state.finalBossDefeated = true; state.boss = null; }
+  const id = "p-" + state.nextPickup++;
+  state.pickups.push({ id, x: enemy.x, z: enemy.z, type: "energy" });
+  if (state.pickups.length > 20) state.pickups.shift();
+}
+export function useAbility(state, playerId, players, now = Date.now()) {
+  const p = players.find(p => p.playerId === playerId);
+  const vital = state.playerVitals[playerId];
+  if (!p || vital?.downed || vital?.eliminated || state.result) return false;
+  if ((state.cooldowns[playerId] ?? 0) > now) return false;
+  state.cooldowns[playerId] = now + 20000;
+  for (const enemy of [...state.enemies]) {
+    if (distance(p, enemy) > 11) continue;
+    enemy.hp -= 42;
+    if (enemy.hp <= 0) killEnemy(state, enemy);
+  }
+  return true;
+}
+export function advanceBattle(state, players, dt, now = Date.now(), difficulty = "normal") {
+  if (!state || state.result) return state;
+  dt = bounded(dt, 0, 1);
+  state.elapsed = Math.min(COOP_SECONDS, state.elapsed + dt);
+  syncPlayers(state, players);
+  const alive = players.filter(p => !state.playerVitals[p.playerId]?.downed
+    && !state.playerVitals[p.playerId]?.eliminated);
+  state.spawnClock += dt;
+  if (!state.bossSpawned && state.elapsed >= 300) {
+    state.bossSpawned = true;
+    state.bossesSpawned = [0];
+    const target = alive[0] ?? { x: 0, z: 0 };
+    spawn(state, target.x + 18, target.z, "boss", difficulty, players.length);
+  }
+  if (state.elapsed < 300 && state.spawnClock > Math.max(0.7, 2.4 - state.elapsed / 240)) {
+    state.spawnClock = 0;
+    const target = alive.length ? alive[Math.floor(Math.random() * alive.length)] : { x: 0, z: 0 };
+    const theta = Math.random() * Math.PI * 2;
+    const kind = state.elapsed > 135 && Math.random() < 0.14 ? "elite"
+      : state.elapsed > 75 && Math.random() < 0.22 ? "runner"
+      : state.elapsed > 150 && Math.random() < 0.17 ? "archer" : "grunt";
+    spawn(state, target.x + Math.cos(theta) * 17, target.z + Math.sin(theta) * 12, kind, difficulty);
+  }
+  for (const enemy of [...state.enemies]) {
+    const nearest = alive.reduce((best, p) => !best || distance(p, enemy) < distance(best, enemy) ? p : best, null);
+    if (!nearest) break;
+    const gap = distance(enemy, nearest);
+    if (gap > 1.3) {
+      const rate = enemy.kind === "runner" ? 4.2 : enemy.kind === "boss" ? 2.1 : 2.5;
+      const travel = Math.min(gap - 1.2, rate * dt);
+      enemy.x += (nearest.x - enemy.x) / gap * travel;
+      enemy.z += (nearest.z - enemy.z) / gap * travel;
+    } else {
+      const vital = state.playerVitals[nearest.playerId];
+      vital.hp = Math.max(0, vital.hp - (enemy.kind === "boss" ? 15 : 5) * dt);
+      if (vital.hp <= 0 && !vital.downed) {
+        vital.downed = true;
+        vital.downedAt = now;
+      }
+    }
+  }
+  for (const player of alive) {
+    const progress = state.playerProgress[player.playerId];
+    const stats = HERO_STATS[player.heroId] ?? HERO_STATS.liubei;
+    const rank = progress.upgrades;
+    const cooldownKey = "attack-" + player.playerId;
+    const interval = Math.max(0.22, stats.interval * (1 - rank.tempo * 0.10));
+    if ((state.cooldowns[cooldownKey] ?? 0) > now) continue;
+    const closest = state.enemies.reduce((best, e) => distance(e, player) <= stats.range + rank.reach * 1.2
+      && (!best || distance(e, player) < distance(best, player)) ? e : best, null);
+    if (!closest) continue;
+    closest.hp -= Math.round(stats.damage * (1 + rank.power * 0.22));
+    state.cooldowns[cooldownKey] = now + interval * 1000;
+    if (closest.hp <= 0) killEnemy(state, closest);
+  }
+  for (const pickup of [...state.pickups]) {
+    if (!alive.some(p => distance(p, pickup) < 2.6)) continue;
+    state.pickups = state.pickups.filter(p => p !== pickup);
+    gainXp(state, players, 2);
+  }
+  for (const p of players) {
+    const vital = state.playerVitals[p.playerId];
+    if (!vital?.downed || vital.eliminated) continue;
+    const rescuers = alive.filter(a => a.playerId !== p.playerId && distance(a, p) < 4.2);
+    vital.reviveProgress = rescuers.length ? vital.reviveProgress + dt : Math.max(0, vital.reviveProgress - dt);
+    if (vital.reviveProgress >= 3) {
+      vital.hp = 40; vital.downed = false; vital.downedAt = 0; vital.reviveProgress = 0;
+    } else if (now - vital.downedAt >= 25000) {
+      vital.eliminated = true; vital.reviveProgress = 0;
+    }
+  }
+  if (state.boss) {
+    const b = state.enemies.find(e => e.kind === "boss");
+    if (b) state.boss.hp = b.hp;
+  }
+  state.xp = state.playerProgress[players[0]?.playerId]?.xp ?? 0;
+  state.level = state.playerProgress[players[0]?.playerId]?.level ?? 1;
+  if (players.length && players.every(p => state.playerVitals[p.playerId]?.eliminated)) state.result = "defeat";
+  if (state.elapsed >= COOP_SECONDS) state.result = state.finalBossDefeated ? "victory" : "defeat";
+  return state;
+}
