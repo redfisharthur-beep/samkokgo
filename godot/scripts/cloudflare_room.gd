@@ -74,7 +74,7 @@ func _handle_message(message: Dictionary) -> void:
 		resume_token = str(message.get("resumeToken", ""))
 		connection_changed.emit("connected")
 		room_event.emit(message)
-	elif kind in ["presence", "players", "room", "start", "game-state", "attack-fx", "enemy-shot-fx", "ability", "level-choice", "player-attack"]:
+	elif kind in ["presence", "players", "room", "start", "game-state", "attack-fx", "enemy-shot-fx", "ability", "level-choice", "player-attack", "player-pickup"]:
 		room_event.emit(message)
 
 func _send(message: Dictionary) -> void:
