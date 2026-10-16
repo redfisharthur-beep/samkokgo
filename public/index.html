@@ -55,20 +55,35 @@
         <div class="hero-picker hidden" id="heroPicker" role="dialog" aria-modal="true" aria-labelledby="heroPickerHeading">
             <div class="hero-picker-shell">
               <button type="button" id="closeHeroPicker" class="picker-close" aria-label="返回首頁">×</button>
-              <p class="picker-label">SELECT YOUR GENERAL</p>
-              <h2 id="heroPickerHeading">出征準備</h2>
+              <p class="picker-label">HERO ARCHIVE · THREE KINGDOMS</p>
+              <h2 id="heroPickerHeading">天下名將錄</h2>
               <nav class="picker-tabs" aria-label="出征準備分頁">
-                <button type="button" class="active" data-picker-tab="heroes">選武將</button>
+                <button type="button" class="active" data-picker-tab="heroes">英雄圖鑑</button>
                 <button type="button" data-picker-tab="recruit">武將招募</button>
                 <button type="button" data-picker-tab="gear">裝備行囊</button>
               </nav>
               <section id="heroPanel" class="picker-page">
-              <div class="hero-choices" id="heroChoices"><button class="hero-choice" data-hero="liubei" aria-label="劉備" title="劉備" type="button"><canvas width="56" height="72" data-portrait="liubei" aria-hidden="true"></canvas><b>劉備</b><small>蜀 · 仁德之主</small></button>
-<button class="hero-choice" data-hero="caocao" aria-label="曹操" title="曹操" type="button"><canvas width="56" height="72" data-portrait="caocao" aria-hidden="true"></canvas><b>曹操</b><small>魏 · 亂世梟雄</small></button>
-<button class="hero-choice" data-hero="sunquan" aria-label="孫權" title="孫權" type="button"><canvas width="56" height="72" data-portrait="sunquan" aria-hidden="true"></canvas><b>孫權</b><small>吳 · 江東霸主</small></button>
-<button class="hero-choice" data-hero="lvbu" aria-label="呂布" title="呂布" type="button"><canvas width="56" height="72" data-portrait="lvbu" aria-hidden="true"></canvas><b>呂布</b><small>群 · 無雙戰神</small></button></div>
-              <div class="hero-description"><h3 id="heroInfoTitle">劉備 · 仁德之主</h3><p id="heroInfo">善於支援友軍，穩健迎戰四方敵軍。</p></div>
-              <button id="confirmHero" type="button" class="picker-confirm">確認武將　◆</button>
+              <div class="hero-archive-layout">
+                <div class="hero-choices" id="heroChoices">
+                  <button class="hero-choice" data-hero="liubei" aria-label="劉備" title="劉備" type="button"><span class="hero-card-faction">蜀　◆　仁德</span><img class="hero-card-art" src="/assets/pixel/actors/liubei-premium.png" alt="" aria-hidden="true"><b>劉備</b><small>仁德之主 · 支援</small></button>
+                  <button class="hero-choice" data-hero="caocao" aria-label="曹操" title="曹操" type="button"><span class="hero-card-faction">魏　◆　霸業</span><img class="hero-card-art" src="/assets/pixel/actors/caocao-premium.png" alt="" aria-hidden="true"><b>曹操</b><small>亂世梟雄 · 統帥</small></button>
+                  <button class="hero-choice" data-hero="sunquan" aria-label="孫權" title="孫權" type="button"><span class="hero-card-faction">吳　◆　江東</span><img class="hero-card-art" src="/assets/pixel/actors/sunquan-premium.png" alt="" aria-hidden="true"><b>孫權</b><small>江東霸主 · 遠射</small></button>
+                  <button class="hero-choice" data-hero="lvbu" aria-label="呂布" title="呂布" type="button"><span class="hero-card-faction">群　◆　無雙</span><img class="hero-card-art" src="/assets/pixel/actors/lvbu-premium.png" alt="" aria-hidden="true"><b>呂布</b><small>無雙戰神 · 先鋒</small></button>
+                </div>
+                <article class="hero-description" aria-live="polite">
+                  <div class="hero-showcase"><span class="showcase-glow"></span><canvas id="heroShowcase" width="56" height="72" data-portrait="liubei" aria-hidden="true"></canvas><span class="showcase-seal">將</span></div>
+                  <div class="hero-detail-copy"><span class="hero-detail-kicker">GENERAL PROFILE</span><span id="heroRole" class="hero-role">仁德支援</span><h3 id="heroInfoTitle">劉備 · 仁德之主</h3><p id="heroInfo">蜀國主公 · 綠金甲冑，重視同伴生存與支援。</p>
+                    <div class="hero-stat-grid" aria-label="武將能力值">
+                      <div class="hero-stat"><span>攻擊</span><i id="heroStat攻擊"></i><b id="heroStat攻擊Value">1</b></div>
+                      <div class="hero-stat"><span>攻速</span><i id="heroStat攻速"></i><b id="heroStat攻速Value">4.6 次/分</b></div>
+                      <div class="hero-stat"><span>射程</span><i id="heroStat射程"></i><b id="heroStat射程Value">17 m</b></div>
+                      <div class="hero-stat"><span>移速</span><i id="heroStat移速"></i><b id="heroStat移速Value">11.0</b></div>
+                    </div>
+                    <div class="hero-passive"><span>戰場定位</span><b id="heroPassive">善用支援，穩住全隊陣線</b></div>
+                  </div>
+                </article>
+              </div>
+              <div class="hero-action-row"><span class="hero-roster-count">已收錄 <b id="unlockedHeroCount">3</b> / 4 位武將</span><button id="confirmHero" type="button" class="picker-confirm">選擇此武將　◆</button></div>
               </section>
               <section id="recruitPanel" class="picker-page hidden">
                 <div class="progression-summary"><b>軍功令</b><strong id="recruitSeals">0</strong><small>通關結算取得 · 每次招募 100 枚</small></div>

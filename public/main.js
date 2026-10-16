@@ -126,11 +126,20 @@ let audioContext = null;
 let musicStep = 0;
 let audioEnabled = localStorage.getItem("samkokgo-sound") === "on";
 
-const renderer = new THREE.WebGLRenderer({ canvas: $("world"), antialias: true, alpha: false, powerPreference: "low-power" });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6));
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas: $("world"), antialias: true, alpha: false, powerPreference: "low-power" });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+} catch (error) {
+  // WebGL can be unavailable in embedded browsers and restricted devices.
+  // Keep the 2D lobby, selection UI, and Godot handoff interactive in that case.
+  console.warn("WebGL unavailable; continuing with the lobby UI and Godot battle handoff.", error);
+  document.documentElement.dataset.webglUnavailable = "true";
+  renderer = { setSize() {}, render() {} };
+}
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xc7d0c9);
@@ -611,6 +620,9 @@ const PIXEL_GENERAL_LORE = {
   sunquan: ["孫權 · 江東霸主", "吳國主公 · 青藍戰袍，快速遠距離壓制敵軍。"],
   lvbu: ["呂布 · 無雙戰神", "群雄猛將 · 赤金戰鎧，以重擊突破重圍。"]
 };
+const GENERAL_ROLES = {
+  liubei: "仁德支援", caocao: "統帥重擊", sunquan: "迅捷遠射", lvbu: "破陣先鋒"
+};
 const portraitCache = new Map();
 function paintGeneral(canvas, heroId) {
   if (!canvas || !PIXEL_GENERAL_LORE[heroId]) return;
@@ -634,8 +646,23 @@ function paintGeneral(canvas, heroId) {
 }
 function refreshGeneralPresentation(heroId) {
   const lore = PIXEL_GENERAL_LORE[heroId] ?? PIXEL_GENERAL_LORE.liubei;
+  const hero = HEROES[heroId] ?? HEROES.liubei;
   if ($("heroInfoTitle")) $("heroInfoTitle").textContent = lore[0];
   if ($("heroInfo")) $("heroInfo").textContent = lore[1];
+  if ($("heroRole")) $("heroRole").textContent = GENERAL_ROLES[heroId] ?? GENERAL_ROLES.liubei;
+  if ($("heroPassive")) $("heroPassive").textContent = lore[1].split(" · ").at(-1);
+  const stats = [
+    ["攻擊", Math.min(100, hero.damage / 3 * 100), `${hero.damage}`],
+    ["攻速", Math.min(100, 1250 / hero.cadence * 100), `${(60000 / hero.cadence).toFixed(1)} 次/分`],
+    ["射程", Math.min(100, hero.range / 20 * 100), `${hero.range} m`],
+    ["移速", Math.min(100, hero.speed / 12 * 100), `${hero.speed.toFixed(1)}`]
+  ];
+  for (const [key, percent, value] of stats) {
+    const meter = $(`heroStat${key}`);
+    const output = $(`heroStat${key}Value`);
+    if (meter) meter.style.setProperty("--stat-fill", `${percent}%`);
+    if (output) output.textContent = value;
+  }
   if ($("currentHeroName")) $("currentHeroName").textContent = HEROES[heroId]?.name ?? "劉備";
   if (ui.home) ui.home.dataset.hero = heroId;
 }
@@ -651,7 +678,7 @@ function selectPickerTab(tab) {
   $("heroPanel")?.classList.toggle("hidden", valid !== "heroes");
   $("recruitPanel")?.classList.toggle("hidden", valid !== "recruit");
   $("gearPanel")?.classList.toggle("hidden", valid !== "gear");
-  if (valid === "heroes") $("heroPickerHeading").textContent = "選擇出戰武將";
+  if (valid === "heroes") $("heroPickerHeading").textContent = "天下名將錄";
   if (valid === "recruit") $("heroPickerHeading").textContent = "招募新武將";
   if (valid === "gear") $("heroPickerHeading").textContent = "武器與防具";
 }
@@ -668,6 +695,8 @@ function refreshHeroLocks() {
       hint.textContent = unlocked ? hint.dataset.originalText : "尚未招募 · 前往抽卡";
     }
   });
+  const rosterCount = $("unlockedHeroCount");
+  if (rosterCount) rosterCount.textContent = String(profile.unlockedHeroes.length);
 }
 function renderProgression() {
   refreshHeroLocks();

@@ -60,6 +60,17 @@ test("all screens share the 1672 by 941 pixel-art frame", () => {
   assert.match(css, /\.room-screen \.kingdom-vista[\s\S]*lobby-pixel\.webp/);
   assert.ok(existsSync(new URL("../public/assets/ui/lobby-pixel.webp", import.meta.url)));
 });
+test("hero archive keeps portraits and controls available when WebGL is blocked", () => {
+  assert.match(js, /catch \(error\) \{[\s\S]*WebGL unavailable/);
+  assert.match(js, /renderer = \{ setSize\(\) \{\}, render\(\) \{\} \}/);
+  for (const hero of ["liubei", "caocao", "sunquan", "lvbu"]) {
+    assert.match(html, new RegExp(`class="hero-card-art" src="/assets/pixel/actors/${hero}-premium\\.png"`));
+  }
+  assert.match(html, /天下名將錄/);
+  assert.match(html, /id="heroShowcase"/);
+  assert.match(js, /heroStat\$\{key\}/);
+  assert.match(css, /\.hero-archive-layout \{[\s\S]*grid-template-columns: minmax\(430px/);
+});
 test("lost mouse or window focus always stops browser movement", () => {
   assert.match(js, /const clearMovementInput = \(event = null\) =>/);
   assert.match(js, /appState\.moveCurrent = \{ x: 0, z: 0 \}/);
