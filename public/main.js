@@ -1191,6 +1191,9 @@ function applyGameState(state) {
     seen.add(snapshot.id);
     let enemy = appState.enemies.find((item) => item.group.userData.id === snapshot.id);
     if (!enemy) enemy = createEnemy({ x: snapshot.x, z: snapshot.z }, snapshot.id, snapshot.hp, snapshot.elite, snapshot.kind, snapshot.bossIndex);
+    if (RULESET === "crossplay-v1" && enemy.group.userData.hp > snapshot.hp) {
+      showHitBurst(snapshot.x, snapshot.z, "liubei", {});
+    }
     enemy.targetPosition = new THREE.Vector3(snapshot.x, 0, snapshot.z);
     if (appState.host && RULESET !== "crossplay-v1") enemy.group.position.copy(enemy.targetPosition);
     enemy.group.userData.hp = snapshot.hp;

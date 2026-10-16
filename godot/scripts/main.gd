@@ -84,7 +84,8 @@ func _process(delta: float) -> void:
 		if sync_clock >= 0.10:
 			sync_clock = 0.0
 			var world_pos := _screen_to_world(player_pos)
-			network.send_input(move_vector.x, move_vector.y, world_pos.x, world_pos.y)
+			var network_direction := keys.normalized() if keys.length() > 0.1 else move_vector
+			network.send_input(network_direction.x, network_direction.y, world_pos.x, world_pos.y)
 	attack_flash = maxf(0.0, attack_flash - delta)
 	var direction := move_vector
 	if keys.length() > 0.1:
@@ -840,7 +841,9 @@ func _apply_game_state(state: Dictionary) -> void:
 		boss_hp = float(state["boss"].get("hp", 0.0))
 		boss_max_hp = float(state["boss"].get("maxHp", 1600.0))
 	var previous_enemy_positions: Dictionary = {}
+	var previous_enemy_hp: Dictionary = {}
 	for old_enemy in enemies:
+		previous_enemy_hp[str(old_enemy.get("id", ""))] = float(old_enemy.get("hp", 0.0))
 		previous_enemy_positions[str(old_enemy.get("id", ""))] = old_enemy.get("pos", Vector2.ZERO)
 	enemies.clear()
 	var next_enemy_targets: Dictionary = {}
@@ -854,6 +857,8 @@ func _apply_game_state(state: Dictionary) -> void:
 		var render_pos: Vector2 = previous_enemy_positions.get(enemy_id, target_pos)
 		next_enemy_targets[enemy_id] = target_pos
 		var hp_value := boss_hp if is_boss else float(enemy.get("hp", 42.0))
+		if crossplay_mode and previous_enemy_hp.has(enemy_id) and hp_value < float(previous_enemy_hp[enemy_id]):
+			_emit_particles(target_pos, GOLD, 5, 70.0)
 		enemies.append({
 			"id": enemy_id,
 			"pos": render_pos,

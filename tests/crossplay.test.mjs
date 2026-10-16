@@ -36,3 +36,10 @@ test("XP upgrades must be offered before choice; abilities have cooldown", () =>
   assert.equal(useAbility(s, "p1", party, 1000), true);
   assert.equal(useAbility(s, "p1", party, 2000), false);
 });
+
+test("Godot keyboard and joystick both supply direction to server movement", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../godot/scripts/main.gd", import.meta.url), "utf8");
+  assert.match(src, /network_direction := keys\.normalized\(\) if keys\.length\(\) > 0\.1 else move_vector/);
+  assert.match(src, /send_input\(network_direction\.x, network_direction\.y/);
+});
