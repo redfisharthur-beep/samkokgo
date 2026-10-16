@@ -43,9 +43,6 @@ test("HTML has web settlement controls", () => {
   assert.ok(html.includes('id="resultMessage"'));
 });
 
-import { test } from "node:test";
-import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import * as protocol from "../shared/protocol.mjs";
 import * as crossplay from "../shared/crossplay.mjs";
 
