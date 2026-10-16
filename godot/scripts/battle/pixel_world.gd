@@ -74,7 +74,7 @@ func refresh(main, delta: float) -> void:
 	if not _ready_for_state:
 		return
 	_elapsed += delta
-	var size := main.get_viewport_rect().size
+	var size: Vector2 = main.get_viewport_rect().size
 	cloud_shift = (main.player_pos - size * 0.5) * 0.55
 	ground.position = size * 0.5 - cloud_shift
 	for item in props:
