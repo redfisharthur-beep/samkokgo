@@ -421,8 +421,8 @@ function sanitizeGameState(state) {
     for (const [playerId, vital] of Object.entries(state.playerVitals).slice(0, MAX_PLAYERS)) {
       if (!/^[\w-]{8,64}$/.test(playerId) || !vital || typeof vital !== "object") continue;
       playerVitals[playerId] = {
-        hp: Math.round(clampNumber(vital.hp, 0, 100)),
-        maxHp: Math.round(clampNumber(vital.maxHp, 1, 100)),
+        hp: Math.round(clampNumber(vital.hp, 0, 200)),
+        maxHp: Math.round(clampNumber(vital.maxHp, 1, 200)),
         downed: Boolean(vital.downed),
         eliminated: Boolean(vital.eliminated),
         reviveProgress: clampNumber(vital.reviveProgress, 0, 3),
