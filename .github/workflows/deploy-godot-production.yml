@@ -1,0 +1,55 @@
+name: Deploy Godot game to production
+
+on:
+  push:
+    branches: [godot4-integration]
+    paths:
+      - "godot/**"
+      - "worker.js"
+      - "wrangler.godot-production.toml"
+      - ".github/workflows/deploy-godot-production.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Godot 4.3 headless
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip \
+            --output /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          chmod +x /tmp/godot/Godot_v4.3-stable_linux.x86_64
+          echo "GODOT=/tmp/godot/Godot_v4.3-stable_linux.x86_64" >> "$GITHUB_ENV"
+
+      - name: Import Godot project
+        run: $GODOT --headless --editor --path godot --quit
+
+      - name: Install Godot 4.3 Web export templates
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz \
+            --output /tmp/godot-templates.tpz
+          unzip -q /tmp/godot-templates.tpz -d /tmp/godot-templates
+          mkdir -p "$HOME/.local/share/godot/export_templates/4.3.stable"
+          cp -R /tmp/godot-templates/templates/. "$HOME/.local/share/godot/export_templates/4.3.stable/"
+
+      - name: Export web game
+        run: |
+          mkdir -p godot/build/web
+          "$GODOT" --headless --path godot --export-release "Web" build/web/index.html
+
+      - name: Deploy game and multiplayer Worker
+        run: npx --yes wrangler@4 deploy --config wrangler.godot-production.toml
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
