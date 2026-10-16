@@ -7,10 +7,10 @@ const SHEET_LIUBEI: Texture2D = preload("res://assets/pixel/actors/liubei-premiu
 const SHEET_CAOCAO: Texture2D = preload("res://assets/pixel/actors/caocao-premium.png")
 const SHEET_SUNQUAN: Texture2D = preload("res://assets/pixel/actors/sunquan-premium.png")
 const SHEET_LVBU: Texture2D = preload("res://assets/pixel/actors/lvbu-premium.png")
-const SHEET_GRUNT: Texture2D = preload("res://assets/pixel/actors/grunt.svg")
-const SHEET_RUNNER: Texture2D = preload("res://assets/pixel/actors/runner.svg")
-const SHEET_ARCHER: Texture2D = preload("res://assets/pixel/actors/archer.svg")
-const SHEET_BOSS: Texture2D = preload("res://assets/pixel/actors/boss.svg")
+const SHEET_GRUNT: Texture2D = preload("res://assets/pixel/actors/grunt-premium.png")
+const SHEET_RUNNER: Texture2D = preload("res://assets/pixel/actors/grunt-premium.png")
+const SHEET_ARCHER: Texture2D = preload("res://assets/pixel/actors/archer-premium.png")
+const SHEET_BOSS: Texture2D = preload("res://assets/pixel/actors/boss-premium.png")
 const CELL := Vector2i(56, 72)
 const MAX_FRAMES := 4
 

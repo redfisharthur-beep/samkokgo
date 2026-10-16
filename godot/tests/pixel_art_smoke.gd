@@ -26,11 +26,11 @@ func _verify() -> void:
 				push_error("Missing sprite frames in " + kind + " / " + animation)
 				quit(1)
 				return
-		if kind in ["liubei", "caocao", "sunquan", "lvbu"]:
+		if kind in ["liubei", "caocao", "sunquan", "lvbu", "grunt", "archer", "boss"]:
 			var premium_path := "res://assets/pixel/actors/%s-premium.png" % kind
 			var premium: Texture2D = load(premium_path)
 			if premium == null or premium.get_size() != Vector2(224, 432):
-				push_error("Premium hero atlas missing or wrong size: " + premium_path)
+				push_error("Premium actor atlas missing or wrong size: " + premium_path)
 				quit(1)
 				return
 	avatar.call("set_visual_position", Vector2(120, 80), 0.016, true)
@@ -53,7 +53,7 @@ func _verify() -> void:
 		push_error("Depth props / Y-sort missing")
 		quit(1)
 		return
-	print("PIXEL ART SMOKE PASS: premium 16:9 battlefield, 4 upgraded hero atlases, 8 actor atlases, 6 action/facing rows, 4 frames each, isometric tilemap and depth props.")
+	print("PIXEL ART SMOKE PASS: premium 16:9 battlefield, 4 upgraded hero atlases, 3 upgraded enemy atlases, 8 animated actor types, 6 action/facing rows, 4 frames each, isometric tilemap and depth props.")
 	world.queue_free()
 	avatar.queue_free()
 	quit(0)
