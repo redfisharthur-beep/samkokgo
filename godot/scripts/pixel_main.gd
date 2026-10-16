@@ -4,9 +4,47 @@ const LOBBY_BG: Texture2D = preload("res://assets/lobby-pixel.webp")
 const UI_GOLD := Color("#c6a96d")
 const UI_PAPER := Color("#eee5d2")
 
+var lobby_hotspots: Array[Button] = []
+
 func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	super._ready()
+	_add_lobby_hotspot(Vector2(-180.0, -70.0), Vector2(360.0, 58.0), "快速加入")
+	_add_lobby_hotspot(Vector2(-180.0, 2.0), Vector2(360.0, 58.0), "建立房間")
+	_add_lobby_hotspot(Vector2(-130.0, 82.0), Vector2(260.0, 54.0), "開始試玩")
+
+func _process(delta: float) -> void:
+	super._process(delta)
+	for hotspot in lobby_hotspots:
+		hotspot.visible = mode == "lobby"
+		hotspot.disabled = mode != "lobby"
+
+func _add_lobby_hotspot(offset: Vector2, button_size: Vector2, label: String) -> void:
+	var hotspot := Button.new()
+	hotspot.name = "Hit_" + label
+	hotspot.text = ""
+	hotspot.tooltip_text = label
+	hotspot.flat = true
+	hotspot.focus_mode = Control.FOCUS_NONE
+	hotspot.mouse_filter = Control.MOUSE_FILTER_STOP
+	hotspot.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	hotspot.anchor_left = 0.5
+	hotspot.anchor_top = 0.5
+	hotspot.anchor_right = 0.5
+	hotspot.anchor_bottom = 0.5
+	hotspot.offset_left = offset.x
+	hotspot.offset_top = offset.y
+	hotspot.offset_right = offset.x + button_size.x
+	hotspot.offset_bottom = offset.y + button_size.y
+	hotspot.modulate = Color(1.0, 1.0, 1.0, 0.001)
+	add_child(hotspot)
+	var center_offset := offset + button_size * 0.5
+	hotspot.pressed.connect(_on_lobby_hotspot_pressed.bind(center_offset))
+	lobby_hotspots.append(hotspot)
+
+func _on_lobby_hotspot_pressed(center_offset: Vector2) -> void:
+	_handle_lobby_click(get_viewport_rect().size * 0.5 + center_offset)
 
 func _draw_lobby(size: Vector2) -> void:
 	draw_texture_rect(LOBBY_BG, Rect2(Vector2.ZERO, size), false)
