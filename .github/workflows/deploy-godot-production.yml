@@ -30,8 +30,15 @@ jobs:
           chmod +x /tmp/godot/Godot_v4.3-stable_linux.x86_64
           echo "GODOT=/tmp/godot/Godot_v4.3-stable_linux.x86_64" >> "$GITHUB_ENV"
 
-      - name: Import Godot project
-        run: $GODOT --headless --editor --path godot --quit
+      - name: Import and validate Godot project
+        shell: bash
+        run: |
+          output="$("$GODOT" --headless --editor --path godot --quit 2>&1)" || { echo "$output"; exit 1; }
+          echo "$output"
+          if grep -q "SCRIPT ERROR:" <<< "$output"; then
+            echo "Godot reported script parse errors during import."
+            exit 1
+          fi
 
       - name: Install Godot 4.3 Web export templates
         shell: bash
