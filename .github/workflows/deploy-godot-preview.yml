@@ -73,6 +73,9 @@ jobs:
             exit 1
           fi
 
+      - name: Smoke-test rendered pixel assets before publishing
+        run: $GODOT --headless --path godot --script res://tests/pixel_art_smoke.gd
+
       - name: Install Godot 4.3 Web export templates
         shell: bash
         run: |

@@ -79,6 +79,9 @@ jobs:
       - name: Launch prototype in headless mode
         run: $GODOT --headless --path godot --quit-after 3
 
+      - name: Smoke-test animated pixel actors and isometric tilemap
+        run: $GODOT --headless --path godot --script res://tests/pixel_art_smoke.gd
+
       - name: Install Godot 4.3 Web export templates
         shell: bash
         run: |
