@@ -196,7 +196,7 @@ export class GameHub extends DurableObject {
     room.disconnected ??= {};
     const resumeToken = url.searchParams.get("resume");
     const resumed = resumeToken ? room.disconnected[resumeToken] : null;
-    const canResume = Boolean(resumed && Date.now() - (resumed.disconnectedAt ?? 0) <= 30000);
+    const canResume = Boolean(resumed && Date.now() - (resumed.disconnectedAt ?? 0) <= (resumed.handoff ? 120000 : 30000));
     if ((room.locked && !canResume) || (!this.canJoinPlaying(room) && !canResume)) return json({ error: "Room is closed" }, 409);
     if (!resumed && existing.length + Object.keys(room.disconnected).length >= room.maxPlayers) return json({ error: "Room is full" }, 409);
     if (resumed) delete room.disconnected[resumeToken];
@@ -207,7 +207,7 @@ export class GameHub extends DurableObject {
     const hostId = room.hostId ?? playerId;
     const spawnPoints = [[0, 0], [-3, 0], [3, 0], [0, -3], [-2, 3], [2, 3]];
     const [spawnX, spawnZ] = spawnPoints[existing.length] ?? [0, 0];
-    const attachment = resumed ? { ...resumed, roomId, host: playerId === hostId } : {
+    const attachment = resumed ? { ...resumed, roomId, host: playerId === hostId, handoff: false } : {
       roomId,
       playerId,
       host: playerId === hostId,
@@ -439,13 +439,16 @@ export class GameHub extends DurableObject {
     const players = this.ctx.getWebSockets(tagFor(roomId)).filter((candidate) => candidate !== socket);
     room.disconnected ??= {};
     const voluntary = code === 1000 && reason === "left";
-    if (!voluntary && attachment.resumeToken) room.disconnected[attachment.resumeToken] = { ...attachment, host: false, disconnectedAt: Date.now() };
+    const handoff = code === 4100 && reason === "handoff" && room.ruleset === "crossplay-v1";
+    if (!voluntary && attachment.resumeToken) room.disconnected[attachment.resumeToken] = {
+      ...attachment, host: handoff && attachment.host, handoff, disconnectedAt: Date.now()
+    };
     if (voluntary && attachment.resumeToken) delete room.disconnected[attachment.resumeToken];
     this.cleanDisconnected(room);
     if (players.length === 0 && Object.keys(room.disconnected).length === 0) {
       delete rooms[roomId];
     } else {
-      if (players.length && room.hostId === attachment.playerId) {
+      if (players.length && room.hostId === attachment.playerId && !handoff) {
         const nextHost = players[0].deserializeAttachment();
         if (nextHost) {
           nextHost.host = true;
@@ -453,7 +456,7 @@ export class GameHub extends DurableObject {
           room.hostId = nextHost.playerId;
         }
       }
-      if (players.length === 0) room.hostId = null;
+      if (players.length === 0 && !handoff) room.hostId = null;
       rooms[roomId] = room;
     }
     await this.ctx.storage.put("rooms", rooms);
@@ -489,7 +492,7 @@ export class GameHub extends DurableObject {
   cleanDisconnected(room) {
     room.disconnected ??= {};
     for (const [token, player] of Object.entries(room.disconnected)) {
-      if (Date.now() - (player.disconnectedAt ?? 0) > 30000) delete room.disconnected[token];
+      if (Date.now() - (player.disconnectedAt ?? 0) > (player.handoff ? 120000 : 30000)) delete room.disconnected[token];
     }
   }
 
