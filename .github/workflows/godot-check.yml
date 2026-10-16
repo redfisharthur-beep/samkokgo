@@ -37,6 +37,35 @@ jobs:
           chmod +x /tmp/godot/Godot_v4.3-stable_linux.x86_64
           echo "GODOT=/tmp/godot/Godot_v4.3-stable_linux.x86_64" >> "$GITHUB_ENV"
 
+      - name: Prepare embedded Traditional Chinese font
+        shell: bash
+        run: |
+          python3 -m venv /tmp/fonttools
+          /tmp/fonttools/bin/pip install --disable-pip-version-check fonttools==4.60.1
+          curl --fail --location --retry 3 \
+            "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf" \
+            --output /tmp/NotoSansTC-full.ttf
+          mkdir -p godot/fonts
+          python3 - <<'PY'
+          from pathlib import Path
+          sources = sorted(Path("godot").rglob("*.gd"))
+          text = "\n".join(path.read_text(encoding="utf-8") for path in sources)
+          Path("/tmp/game-font-text.txt").write_text(text, encoding="utf-8")
+          PY
+          /tmp/fonttools/bin/pyftsubset /tmp/NotoSansTC-full.ttf \
+            --text-file=/tmp/game-font-text.txt \
+            --output-file=godot/fonts/NotoSansTC.ttf \
+            --layout-features="*" \
+            --name-IDs="*" \
+            --name-languages="*" \
+            --glyph-names \
+            --notdef-glyph \
+            --notdef-outline \
+            --recommended-glyphs
+          curl --fail --location --retry 3 \
+            "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstc/OFL.txt" \
+            --output godot/fonts/OFL.txt
+          ls -lh godot/fonts/NotoSansTC.ttf
       - name: Import and parse Godot project
         run: $GODOT --headless --editor --path godot --quit
 
