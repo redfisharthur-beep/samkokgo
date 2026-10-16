@@ -18,7 +18,7 @@ const PIXEL_SKIN_COLORS = new Set([0xd6b99d, 0xcdb59e, 0xd7bda3, 0xd2b196, 0xc5a
 const WORLD = { x: 48, z: 27 };
 const ROUND_SECONDS = 12 * 60;
 const PROTOCOL_VERSION = 1;
-const RULESET = "threejs-alpha";
+const RULESET = new URLSearchParams(location.search).get("classic") === "1" ? "threejs-alpha" : "crossplay-v1";
 const protocolPath = (path) => `${path}${path.includes("?") ? "&" : "?"}ruleset=${RULESET}&protocol=${PROTOCOL_VERSION}`;
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -669,7 +669,7 @@ function applyLevelChoice(playerId, upgradeId) {
 }
 
 function createEnemy(position = null, id = null, hp = 2, elite = false, kind = elite ? "elite" : "grunt", bossIndex = -1) {
-  hp = Math.max(1, Math.ceil(hp * ({ easy: .78, normal: 1, hard: 1.32 }[appState.difficulty] ?? 1)));
+  hp = RULESET === "crossplay-v1" && id ? hp : Math.max(1, Math.ceil(hp * ({ easy: .78, normal: 1, hard: 1.32 }[appState.difficulty] ?? 1)));
   const color = ({ grunt: 0x9c6b65, runner: 0xb49b6e, archer: 0x8097a0, elite: 0x817e72, boss: 0x685d61 }[kind] ?? 0x9c6b65);
   const enemy = makeWarrior(color, false, "liubei", kind);
   enemy.group.scale.setScalar(kind === "boss" ? 1.48 : kind === "elite" ? 1 : kind === "runner" ? .88 : kind === "archer" ? .92 : .9);
@@ -1066,7 +1066,7 @@ function handleSocketMessage(event) {
       clearRun();
       appState.startedAt = appState.room.startedAt;
       appState.difficulty = appState.room.difficulty ?? "normal";
-      appState.secondsLeft = Math.max(0, ROUND_SECONDS - Math.floor((Date.now() - appState.startedAt) / 1000));
+      appState.secondsLeft = Math.max(0, (appState.room?.roundSeconds ?? ROUND_SECONDS) - Math.floor((Date.now() - appState.startedAt) / 1000));
       updateMapVisual(appState.room.mapId ?? "forest");
       if (message.gameState) applyGameState(message.gameState);
       setScreen("game");
@@ -1087,9 +1087,10 @@ function handleSocketMessage(event) {
     const heroId = appState.players.get(message.playerId)?.heroId ?? "liubei";
     const upgrades = appState.playerProgress[message.playerId]?.upgrades ?? {};
     showAbilityBurst(message.x, message.z, heroId, upgrades);
-    if (appState.host) activateAbility(message.playerId, message.x, message.z);
+    if (appState.host && RULESET !== "crossplay-v1") activateAbility(message.playerId, message.x, message.z);
   }
-  if (message.type === "level-choice" && appState.host) applyLevelChoice(message.playerId, message.upgradeId);
+  if (message.type === "level-choice" && appState.host && RULESET !== "crossplay-v1") applyLevelChoice(message.playerId, message.upgradeId);
+  if (message.type === "battle-result") finishRun(message.result === "victory");
   if (message.type === "room") {
     appState.room = message.room;
     appState.host = appState.room?.hostId === appState.selfId || appState.players.get(appState.selfId)?.host;
@@ -1179,7 +1180,7 @@ function applyGameState(state) {
     let enemy = appState.enemies.find((item) => item.group.userData.id === snapshot.id);
     if (!enemy) enemy = createEnemy({ x: snapshot.x, z: snapshot.z }, snapshot.id, snapshot.hp, snapshot.elite, snapshot.kind, snapshot.bossIndex);
     enemy.targetPosition = new THREE.Vector3(snapshot.x, 0, snapshot.z);
-    if (appState.host) enemy.group.position.copy(enemy.targetPosition);
+    if (appState.host && RULESET !== "crossplay-v1") enemy.group.position.copy(enemy.targetPosition);
     enemy.group.userData.hp = snapshot.hp;
     enemy.group.userData.elite = Boolean(snapshot.elite);
     enemy.group.userData.kind = snapshot.kind ?? (snapshot.elite ? "elite" : "grunt");
@@ -1203,8 +1204,12 @@ function applyGameState(state) {
     return false;
   });
   renderBossHealth(state.boss);
+  if (RULESET === "crossplay-v1" && state.result) {
+    finishRun(state.result === "victory");
+    return;
+  }
   const vitals = [...appState.players.values()].filter((player) => !player.offline).map((player) => appState.playerVitals[player.id]).filter(Boolean);
-  if (vitals.length && vitals.every((vital) => vital.eliminated || vital.downed)) finishRun(false);
+  if (RULESET !== "crossplay-v1" && vitals.length && vitals.every((vital) => vital.eliminated || vital.downed)) finishRun(false);
 }
 
 function renderBossHealth(boss) {
@@ -1417,7 +1422,7 @@ function updateMovement(delta) {
     localPlayer.lastRunTrail = performance.now();
     showRunTrail(localPlayer.group.position.x, localPlayer.group.position.z, appState.heroId);
   }
-  if (appState.socket?.readyState === WebSocket.OPEN && performance.now() - appState.lastInput > 250) {
+  if (appState.socket?.readyState === WebSocket.OPEN && performance.now() - appState.lastInput > (RULESET === "crossplay-v1" ? 100 : 250)) {
     appState.lastInput = performance.now();
     appState.socket.send(JSON.stringify({ type: "input", x, z, px: localPlayer.group.position.x, pz: localPlayer.group.position.z }));
   }
@@ -1461,6 +1466,19 @@ function updatePickups(delta) {
 
 function updateCombat(now, delta) {
   if (appState.screen !== "game") return;
+  if (RULESET === "crossplay-v1") {
+    for (const enemy of appState.enemies) {
+      if (enemy.targetPosition) enemy.group.position.lerp(enemy.targetPosition, Math.min(1, delta * 9));
+    }
+    if (appState.startedAt) {
+      const duration = appState.room?.roundSeconds ?? 360;
+      appState.secondsLeft = Math.max(0, duration - Math.floor((Date.now() - appState.startedAt) / 1000));
+      const minutes = String(Math.floor(appState.secondsLeft / 60)).padStart(2, "0");
+      const seconds = String(appState.secondsLeft % 60).padStart(2, "0");
+      ui.timer.textContent = minutes + ":" + seconds;
+    }
+    return; // Cloudflare authoritative combat; no local host NPC/XP/damage.
+  }
   if (appState.host) {
     const elapsed = Math.floor((Date.now() - appState.startedAt) / 1000);
     const bossTimes = [180, 420, 600];
@@ -1877,7 +1895,7 @@ function installControls() {
   $("gameLock").addEventListener("click", () => sendRoomAction("lock"));
   $("inviteButton").addEventListener("click", async () => {
     if (!appState.roomId) return;
-    try { await navigator.clipboard.writeText(`${location.origin}/?room=${appState.roomId}`); showToast("邀請連結已複製"); }
+    try { await navigator.clipboard.writeText(`${location.origin}/?room=${appState.roomId}${RULESET === "crossplay-v1" ? "" : "&classic=1"}`); showToast("邀請連結已複製"); }
     catch { showToast("請使用瀏覽器分享功能邀請"); }
   });
   $("fullscreen").addEventListener("click", () => document.documentElement.requestFullscreen?.().catch(() => {}));

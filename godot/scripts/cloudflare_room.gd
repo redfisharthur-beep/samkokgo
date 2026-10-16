@@ -2,7 +2,7 @@ extends Node
 class_name CloudflareRoom
 
 const PROTOCOL_VERSION := 1
-const RULESET := "godot-alpha"
+const RULESET := "crossplay-v1"
 
 signal api_result(endpoint: String, payload: Dictionary)
 signal room_event(payload: Dictionary)

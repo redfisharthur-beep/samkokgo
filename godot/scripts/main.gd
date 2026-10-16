@@ -47,6 +47,7 @@ var boss_hp := 0.0
 var attack_flash := 0.0
 var is_host := false
 var room_connected := false
+var crossplay_mode := false
 var sync_clock := 0.0
 var _sync_clock := 0.0
 var next_enemy_id := 1
@@ -70,10 +71,10 @@ func _process(delta: float) -> void:
 		queue_redraw()
 		return
 
-	var authority := not room_connected or is_host
+	var authority := (not room_connected or is_host) and not crossplay_mode
 	if room_connected:
 		_interpolate_remote_players(delta)
-		if not is_host:
+		if not is_host or crossplay_mode:
 			_interpolate_enemy_positions(delta)
 	elapsed += delta if authority else 0.0
 	if room_connected:
@@ -106,8 +107,9 @@ func _process(delta: float) -> void:
 			boss_hp = 1600.0
 			_spawn_enemy(false, true)
 
-	attack_clock += delta
-	if attack_clock >= attack_interval:
+	if not crossplay_mode:
+		attack_clock += delta
+	if not crossplay_mode and attack_clock >= attack_interval:
 		attack_clock = 0.0
 		_auto_attack()
 
@@ -121,11 +123,14 @@ func _process(delta: float) -> void:
 			if _sync_clock >= 0.25:
 				_sync_clock = 0.0
 				_publish_game_state()
-	else:
+	elif not crossplay_mode:
 		_update_remote_drops()
 	_update_projectiles(delta)
 	_update_particles(delta)
 
+	if crossplay_mode:
+		queue_redraw()
+		return
 	if room_connected and authority and _all_players_out():
 		mode = "defeat"
 	elif not room_connected and hp <= 0.0:
@@ -217,7 +222,7 @@ func _start_battle(_send_room_start: bool = false) -> void:
 	damage = 20.0
 	attack_interval = 0.9
 	attack_range = 380.0
-	move_speed = 255.0
+	move_speed = 140.0 if crossplay_mode else 255.0
 	sync_clock = 0.0
 	_sync_clock = 0.0
 	next_enemy_id = 1
@@ -585,6 +590,9 @@ func _choose_upgrade(index: int) -> void:
 		return
 	var chosen := upgrade_choices[index]
 	upgrade_choices.clear()
+	if crossplay_mode and room_connected:
+		network.send_action({"type": "level-choice", "upgradeId": _upgrade_id_for_label(chosen)})
+		return
 	_apply_upgrade_label(chosen)
 	if room_connected and is_host:
 		network.send_action({"type": "level-choice", "upgradeId": _upgrade_id_for_label(chosen)})
@@ -678,6 +686,7 @@ func _on_room_event(event: Dictionary) -> void:
 		var welcome_snapshot: Dictionary = event.get("snapshot", {})
 		_update_room_players(welcome_snapshot.get("players", []))
 		var room_data: Dictionary = welcome_snapshot.get("room", {})
+		crossplay_mode = str(room_data.get("ruleset", "")) == "crossplay-v1"
 		var welcome_state: Variant = event.get("gameState")
 		if room_data.get("status", "waiting") == "playing":
 			_start_battle(false)
@@ -693,19 +702,21 @@ func _on_room_event(event: Dictionary) -> void:
 			_start_battle(false)
 		status_text = "隊伍已開始"
 	elif kind == "game-state":
-		if room_connected and not is_host:
+		if room_connected and (not is_host or crossplay_mode):
 			_apply_game_state(event.get("state", {}))
+	elif kind == "battle-result":
+		mode = "victory" if str(event.get("result", "")) == "victory" else "defeat"
 	elif kind == "player-attack":
-		if is_host:
+		if is_host and not crossplay_mode:
 			_apply_remote_attack(event)
 	elif kind == "player-pickup":
-		if is_host:
+		if is_host and not crossplay_mode:
 			_collect_shared_pickup(str(event.get("pickupId", "")))
 	elif kind == "enemy-shot-fx":
 		if not is_host:
 			_receive_enemy_shot(event)
 	elif kind == "level-choice":
-		if not is_host:
+		if not is_host and not crossplay_mode:
 			_apply_upgrade_id(str(event.get("upgradeId", "")))
 	queue_redraw()
 
@@ -720,6 +731,10 @@ func _update_room_players(players: Array) -> void:
 		var player_id := str(player.get("id", ""))
 		if player_id == network.self_id:
 			is_host = bool(player.get("host", false))
+			if crossplay_mode and mode == "battle":
+				var authoritative_pos := _world_to_screen(Vector2(float(player.get("x", 0.0)), float(player.get("z", 0.0))))
+				if player_pos.distance_to(authoritative_pos) > 35.0:
+					player_pos = player_pos.lerp(authoritative_pos, 0.35)
 		else:
 			remote_players.append(player)
 			connected_ids.append(player_id)
@@ -854,7 +869,24 @@ func _apply_game_state(state: Dictionary) -> void:
 		})
 	xp = int(state.get("xp", xp))
 	level = int(state.get("level", level))
-	xp_goal = 5 + level * 3
+	if crossplay_mode:
+		var progress_by_player: Dictionary = state.get("playerProgress", {})
+		var mine: Dictionary = progress_by_player.get(network.self_id, {})
+		if not mine.is_empty():
+			xp = int(mine.get("xp", xp))
+			level = int(mine.get("level", level))
+			var pending: Array = mine.get("pendingChoices", [])
+			upgrade_choices.clear()
+			if not pending.is_empty():
+				for upgrade_id in pending[0]:
+					match str(upgrade_id):
+						"power": upgrade_choices.append("長槍淬鋒")
+						"tempo": upgrade_choices.append("連弩機括")
+						"reach": upgrade_choices.append("神兵覺醒")
+						"speed": upgrade_choices.append("輕身步法")
+	xp_goal = 5 + (level - 1) * 2 if crossplay_mode else 5 + level * 3
+	if crossplay_mode and state.get("result") is String:
+		mode = "victory" if str(state.get("result")) == "victory" else "defeat"
 	var state_vitals: Variant = state.get("playerVitals", {})
 	if state_vitals is Dictionary:
 		player_vitals = state_vitals
