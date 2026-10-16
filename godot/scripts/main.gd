@@ -9,6 +9,8 @@ const JADE := Color("#718d7a")
 const RUST := Color("#ad7767")
 const GOLD := Color("#c7a96d")
 const NIGHT := Color("#293632")
+const REVIVE_SECONDS := 3.0
+const DOWNED_TIMEOUT := 25.0
 
 var mode := "lobby"
 var status_text := "選擇快速加入，或建立房間"
@@ -47,6 +49,7 @@ var _sync_clock := 0.0
 var next_enemy_id := 1
 var next_pickup_id := 1
 var move_speed := 255.0
+var player_vitals: Dictionary = {}
 
 func _ready() -> void:
 	player_pos = get_viewport_rect().size * 0.5
@@ -75,7 +78,8 @@ func _process(delta: float) -> void:
 	var direction := move_vector
 	if keys.length() > 0.1:
 		direction = keys.normalized()
-	player_pos += direction * move_speed * delta
+	if not _local_is_down():
+		player_pos += direction * move_speed * delta
 	var bounds := get_viewport_rect().size
 	player_pos.x = clampf(player_pos.x, 50.0, bounds.x - 50.0)
 	player_pos.y = clampf(player_pos.y, 125.0, bounds.y - 50.0)
@@ -102,6 +106,7 @@ func _process(delta: float) -> void:
 	if authority:
 		_update_combat(delta)
 		_update_enemies(delta)
+		_update_revives(delta)
 		_update_drops(delta)
 		if room_connected:
 			_sync_clock += delta
@@ -113,7 +118,9 @@ func _process(delta: float) -> void:
 	_update_projectiles(delta)
 	_update_particles(delta)
 
-	if hp <= 0.0:
+	if room_connected and authority and _all_players_out():
+		mode = "defeat"
+	elif not room_connected and hp <= 0.0:
 		mode = "defeat"
 	elif elapsed >= 360.0 and (not boss_spawned or boss_hp <= 0.0):
 		mode = "victory"
@@ -214,8 +221,13 @@ func _start_battle(_send_room_start: bool = false) -> void:
 	enemy_shots.clear()
 	drops.clear()
 	particles.clear()
+	player_vitals.clear()
 	player_pos = get_viewport_rect().size * 0.5
 	move_vector = Vector2.ZERO
+	if room_connected:
+		_ensure_vital(network.self_id)
+		for teammate in remote_players:
+			_ensure_vital(str(teammate.get("id", "")))
 	if not room_connected or is_host:
 		_spawn_enemy(false)
 		if room_connected:
@@ -268,17 +280,27 @@ func _update_combat(delta: float) -> void:
 	for i in range(enemies.size() - 1, -1, -1):
 		var enemy: Dictionary = enemies[i]
 		var pos: Vector2 = enemy["pos"]
-		var scale: float = enemy["scale"]
-		var radius := 20.0 * scale
-		if pos.distance_to(player_pos) < radius + 22.0:
-			hp -= (12.0 if not enemy["boss"] else 24.0) * delta
+		var radius := 20.0 * float(enemy["scale"])
+		var damage_per_second := 24.0 if enemy["boss"] else 12.0
+		if not _local_is_down() and pos.distance_to(player_pos) < radius + 22.0:
+			_damage_player(_local_player_id(), damage_per_second * delta)
+		if room_connected:
+			for teammate in remote_players:
+				var teammate_id := str(teammate.get("id", ""))
+				if _vital_is_out(teammate_id):
+					continue
+				var teammate_pos := _world_to_screen(Vector2(float(teammate.get("x", 0.0)), float(teammate.get("z", 0.0))))
+				if pos.distance_to(teammate_pos) < radius + 22.0:
+					_damage_player(teammate_id, damage_per_second * delta)
 		if enemy["ranged"] and not enemy["boss"]:
 			enemy["shot_clock"] -= delta
-			if enemy["shot_clock"] <= 0.0 and pos.distance_to(player_pos) < 520.0:
-				enemy["shot_clock"] = randf_range(2.1, 3.0)
-				var direction := (player_pos - pos).normalized()
-				enemy_shots.append({"pos": pos, "vel": direction * 215.0, "life": 3.5})
-				_emit_particles(pos, RUST, 5, 65.0)
+			if enemy["shot_clock"] <= 0.0:
+				var target := _nearest_active_player(pos)
+				if not target.is_empty() and pos.distance_to(target["pos"]) < 520.0:
+					enemy["shot_clock"] = randf_range(2.1, 3.0)
+					var direction: Vector2 = (target["pos"] - pos).normalized()
+					enemy_shots.append({"pos": pos, "vel": direction * 215.0, "life": 3.5, "targetId": target["id"]})
+					_emit_particles(pos, RUST, 5, 65.0)
 		if enemy["boss"]:
 			boss_hp = enemy["hp"]
 			enemy["phase"] = float(enemy["phase"]) + delta * 2.0
@@ -296,6 +318,119 @@ func _update_enemies(delta: float) -> void:
 			velocity = to_player.normalized() * float(enemy["speed"])
 		enemy["pos"] = pos + velocity * delta
 		enemies[i] = enemy
+
+func _local_player_id() -> String:
+	return network.self_id if room_connected else "solo"
+
+func _ensure_vital(player_id: String) -> void:
+	if player_id.is_empty() or player_vitals.has(player_id):
+		return
+	player_vitals[player_id] = {
+		"hp": 100.0,
+		"maxHp": 100.0,
+		"downed": false,
+		"eliminated": false,
+		"reviveProgress": 0.0,
+		"downedAt": 0.0
+	}
+
+func _local_is_down() -> bool:
+	if not room_connected:
+		return false
+	_ensure_vital(network.self_id)
+	var vital: Dictionary = player_vitals.get(network.self_id, {})
+	return bool(vital.get("downed", false)) or bool(vital.get("eliminated", false))
+
+func _vital_is_out(player_id: String) -> bool:
+	_ensure_vital(player_id)
+	var vital: Dictionary = player_vitals.get(player_id, {})
+	return bool(vital.get("downed", false)) or bool(vital.get("eliminated", false))
+
+func _damage_player(player_id: String, amount: float) -> void:
+	if not room_connected:
+		hp = maxf(0.0, hp - amount)
+		return
+	_ensure_vital(player_id)
+	var vital: Dictionary = player_vitals[player_id]
+	if vital["downed"] or vital["eliminated"]:
+		return
+	vital["hp"] = maxf(0.0, float(vital["hp"]) - amount)
+	if float(vital["hp"]) <= 0.0:
+		vital["downed"] = true
+		vital["reviveProgress"] = 0.0
+		vital["downedAt"] = elapsed
+	if player_id == network.self_id:
+		hp = float(vital["hp"])
+	player_vitals[player_id] = vital
+
+func _nearest_active_player(from: Vector2) -> Dictionary:
+	var best := 1.0e20
+	var result := {}
+	if not _local_is_down():
+		best = from.distance_to(player_pos)
+		result = {"id": _local_player_id(), "pos": player_pos}
+	for teammate in remote_players:
+		var player_id := str(teammate.get("id", ""))
+		if _vital_is_out(player_id):
+			continue
+		var pos := _world_to_screen(Vector2(float(teammate.get("x", 0.0)), float(teammate.get("z", 0.0))))
+		var distance := from.distance_to(pos)
+		if distance < best:
+			best = distance
+			result = {"id": player_id, "pos": pos}
+	return result
+
+func _player_screen_position(player_id: String) -> Vector2:
+	if player_id == _local_player_id():
+		return player_pos
+	for teammate in remote_players:
+		if str(teammate.get("id", "")) == player_id:
+			return _world_to_screen(Vector2(float(teammate.get("x", 0.0)), float(teammate.get("z", 0.0))))
+	return Vector2(-10000, -10000)
+
+func _update_revives(delta: float) -> void:
+	for player_id_variant in player_vitals.keys():
+		var player_id := str(player_id_variant)
+		var vital: Dictionary = player_vitals[player_id]
+		if not vital["downed"] or vital["eliminated"]:
+			continue
+		if elapsed - float(vital["downedAt"]) >= DOWNED_TIMEOUT:
+			vital["downed"] = false
+			vital["eliminated"] = true
+			player_vitals[player_id] = vital
+			continue
+		var downed_pos := _player_screen_position(player_id)
+		var being_revived := false
+		if player_id != network.self_id and not _local_is_down() and player_pos.distance_to(downed_pos) < 54.0:
+			being_revived = true
+		if room_connected:
+			for teammate in remote_players:
+				var rescuer_id := str(teammate.get("id", ""))
+				if rescuer_id == player_id or _vital_is_out(rescuer_id):
+					continue
+				var rescuer_pos := _world_to_screen(Vector2(float(teammate.get("x", 0.0)), float(teammate.get("z", 0.0))))
+				if rescuer_pos.distance_to(downed_pos) < 54.0:
+					being_revived = true
+					break
+		if being_revived:
+			vital["reviveProgress"] = minf(REVIVE_SECONDS, float(vital["reviveProgress"]) + delta)
+		else:
+			vital["reviveProgress"] = maxf(0.0, float(vital["reviveProgress"]) - delta * 1.5)
+		if float(vital["reviveProgress"]) >= REVIVE_SECONDS:
+			vital["downed"] = false
+			vital["hp"] = float(vital["maxHp"]) * 0.4
+			vital["reviveProgress"] = 0.0
+			if player_id == network.self_id:
+				hp = float(vital["hp"])
+		player_vitals[player_id] = vital
+
+func _all_players_out() -> bool:
+	if player_vitals.is_empty():
+		return false
+	for player_id in player_vitals:
+		if not _vital_is_out(str(player_id)):
+			return false
+	return true
 
 func _update_projectiles(delta: float) -> void:
 	for i in range(shots.size() - 1, -1, -1):
@@ -333,9 +468,11 @@ func _update_projectiles(delta: float) -> void:
 		var shot: Dictionary = enemy_shots[i]
 		shot["pos"] = Vector2(shot["pos"]) + Vector2(shot["vel"]) * delta
 		shot["life"] = float(shot["life"]) - delta
-		if Vector2(shot["pos"]).distance_to(player_pos) < 21.0:
-			hp -= 10.0
-			_emit_particles(player_pos, RUST, 12, 130.0)
+		var target_id := str(shot.get("targetId", _local_player_id()))
+		var target_pos := _player_screen_position(target_id)
+		if target_pos.distance_to(Vector2(shot["pos"])) < 21.0:
+			_damage_player(target_id, 10.0)
+			_emit_particles(target_pos, RUST, 12, 130.0)
 			enemy_shots.remove_at(i)
 		elif float(shot["life"]) <= 0.0:
 			enemy_shots.remove_at(i)
@@ -365,6 +502,13 @@ func _add_team_xp(amount: int) -> void:
 		xp -= xp_goal
 		level += 1
 		xp_goal = 5 + level * 3
+	var state_vitals: Variant = state.get("playerVitals", {})
+	if state_vitals is Dictionary:
+		player_vitals = state_vitals
+		var own_vital: Dictionary = player_vitals.get(network.self_id, {})
+		if not own_vital.is_empty():
+			hp = float(own_vital.get("hp", hp))
+			max_hp = float(own_vital.get("maxHp", max_hp))
 		_open_upgrade()
 
 func _collect_shared_pickup(pickup_id: String) -> void:
@@ -566,7 +710,8 @@ func _publish_game_state() -> void:
 		"elapsed": elapsed,
 		"xp": xp,
 		"level": level,
-		"energy": 0
+		"energy": 0,
+		"playerVitals": player_vitals
 	})
 
 func _apply_game_state(state: Dictionary) -> void:
