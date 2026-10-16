@@ -279,7 +279,7 @@ export class GameHub extends DurableObject {
       return;
     }
     if (message.type === "game-state" && attachment.playerId === room.hostId && room.status === "playing") {
-      const state = sanitizeGameState(message.state);
+      const state = sanitizeGameState(message.state, durationForRuleset(room.ruleset));
       if (state) {
         this.broadcast(room.id, { type: "game-state", state }, socket);
         if (Date.now() - (room.gameStateSavedAt ?? 0) > 1500) {
@@ -455,7 +455,7 @@ function clampNumber(value, min, max) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : 0;
 }
-function sanitizeGameState(state) {
+function sanitizeGameState(state, roundSeconds = 720) {
   if (!state || !Array.isArray(state.enemies)) return null;
   const enemies = state.enemies.slice(0, 36).map((enemy, index) => ({
     id: String(enemy?.id ?? index).slice(0, 32),
@@ -522,7 +522,7 @@ function sanitizeGameState(state) {
     xp: Math.round(clampNumber(state.xp, 0, 9999)),
     level: Math.round(clampNumber(state.level, 1, 99)),
     energy: Math.round(clampNumber(state.energy, 0, 100)),
-    elapsed: clampNumber(state.elapsed, 0, 360)
+    elapsed: clampNumber(state.elapsed, 0, roundSeconds)
   };
 }
 function json(data, status = 200) {
