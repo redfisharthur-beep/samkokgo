@@ -8,11 +8,12 @@ This branch contains an isolated Godot 4.3 prototype. The existing browser game 
 - Liu Bei moves with WASD/arrow keys or by dragging from any touch point.
 - Automatic nearest-enemy spear shots with hit sparks and impact particles.
 - Chasing melee soldiers and retreating ranged soldiers that fire aimed projectiles.
-- Experience drops, level-up card choices, stat upgrades, an elite boss at minute five, and victory/defeat screens.
+- Shared enemy and pickup state, visible teammate movement, teammate attacks, and host-selected team upgrades.
+- Experience drops, level-up choices, an elite boss at minute five, and victory/defeat screens.
 - The lobby can create or quick-join through the existing Cloudflare room API.
 
-GitHub Actions checks the project, launches it headlessly, exports a Godot Web build, and stores that browser build as a downloadable artifact for 14 days.
+GitHub Actions checks the Worker and browser scripts, imports and launches the Godot project headlessly, exports a Godot Web build, and stores that browser build as a downloadable artifact for 14 days.
 
 ## Current scope
 
-The combat is a single-player prototype. The room API can connect players, but their positions, enemies, combat state, and upgrades are not yet synchronized. The figures and battlefield are temporary procedural shapes, not the requested detailed pixel-art assets or final 2.5D models. The exported browser build is ready for review, but it is not yet wired into the Cloudflare deployment. The deployed browser game is unchanged.
+Co-op synchronization is an early prototype. The room host owns enemy simulation and team progression; teammate movement, attacks, shared drops, and team upgrades are relayed through the Worker. Per-player health, downed/revive handling, synchronized enemy attack patterns, and a live 4–6 player playtest are still outstanding. The figures and battlefield are temporary procedural shapes, not the requested detailed pixel-art assets or final 2.5D models. The Web export is built automatically, but it is not yet wired into the Cloudflare deployment. The deployed browser game is unchanged.
