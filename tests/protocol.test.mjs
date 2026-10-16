@@ -37,11 +37,15 @@ test("production and preview Workers stay separated", () => {
   const production = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   const preview = readFileSync(new URL("../wrangler.godot-preview.toml", import.meta.url), "utf8");
   const workflow = readFileSync(new URL("../.github/workflows/deploy-godot-preview.yml", import.meta.url), "utf8");
+  const productionWorkflow = readFileSync(new URL("../.github/workflows/deploy-godot-production.yml", import.meta.url), "utf8");
   assert.match(production, /name = "samkokgo"/);
   assert.match(production, /run_worker_first = \["\/api\/\*", "\/ws", "\/godot\/index\.wasm"\]/);
   assert.match(preview, /name = "samkokgo-godot-preview"/);
   assert.ok(!preview.includes('name = "samkokgo"'));
   assert.match(workflow, /--config wrangler\.godot-preview\.toml/);
+  assert.match(productionWorkflow, /branches: \[main\]/);
+  assert.match(productionWorkflow, /cp -R godot\/build\/web\/\. public\/godot\//);
+  assert.match(productionWorkflow, /--config wrangler\.toml/);
 });
 
 test("crossplay preview hosts both frontends on one Durable Object origin", () => {

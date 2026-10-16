@@ -1,0 +1,144 @@
+name: Deploy Godot production
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "godot/**"
+      - "public/**"
+      - "shared/**"
+      - "tests/**"
+      - "package.json"
+      - "worker.js"
+      - "wrangler.toml"
+      - ".github/workflows/deploy-godot-production.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: samkokgo-production-deploy
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Godot 4.3 headless
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip \
+            --output /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          chmod +x /tmp/godot/Godot_v4.3-stable_linux.x86_64
+          echo "GODOT=/tmp/godot/Godot_v4.3-stable_linux.x86_64" >> "$GITHUB_ENV"
+
+      - name: Prepare embedded Traditional Chinese font
+        shell: bash
+        run: |
+          python3 -m venv /tmp/fonttools
+          /tmp/fonttools/bin/pip install --disable-pip-version-check fonttools==4.60.1
+          curl --fail --location --retry 3 \
+            "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf" \
+            --output /tmp/NotoSansTC-full.ttf
+          mkdir -p godot/fonts
+          python3 - <<'PY'
+          from pathlib import Path
+          sources = sorted(Path("godot").rglob("*.gd"))
+          text = "\n".join(path.read_text(encoding="utf-8") for path in sources)
+          Path("/tmp/game-font-text.txt").write_text(text, encoding="utf-8")
+          PY
+          /tmp/fonttools/bin/pyftsubset /tmp/NotoSansTC-full.ttf \
+            --text-file=/tmp/game-font-text.txt \
+            --output-file=godot/fonts/NotoSansTC.ttf \
+            --layout-features="*" \
+            --name-IDs="*" \
+            --name-languages="*" \
+            --glyph-names \
+            --notdef-glyph \
+            --notdef-outline \
+            --recommended-glyphs
+          curl --fail --location --retry 3 \
+            "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstc/OFL.txt" \
+            --output godot/fonts/OFL.txt
+          ls -lh godot/fonts/NotoSansTC.ttf
+      - name: Import and validate Godot project
+        shell: bash
+        run: |
+          output="$("$GODOT" --headless --editor --path godot --quit 2>&1)" || { echo "$output"; exit 1; }
+          echo "$output"
+          if grep -q "SCRIPT ERROR:" <<< "$output"; then
+            echo "Godot reported script parse errors during import."
+            exit 1
+          fi
+
+      - name: Smoke-test rendered pixel assets before publishing
+        run: $GODOT --headless --path godot --script res://tests/pixel_art_smoke.gd
+
+      - name: Install Godot 4.3 Web export templates
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz \
+            --output /tmp/godot-templates.tpz
+          unzip -q /tmp/godot-templates.tpz -d /tmp/godot-templates
+          mkdir -p "$HOME/.local/share/godot/export_templates/4.3.stable"
+          cp -R /tmp/godot-templates/templates/. "$HOME/.local/share/godot/export_templates/4.3.stable/"
+
+      - name: Export web game
+        run: |
+          mkdir -p godot/build/web
+          "$GODOT" --headless --path godot --export-release "Web" build/web/index.html
+
+      - name: Split WebAssembly into Cloudflare-safe parts
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = "godot/build/web/index.wasm";
+          const original = fs.readFileSync(path);
+          const partSize = 20 * 1024 * 1024;
+          if (original.subarray(0, 4).toString("hex") !== "0061736d") {
+            throw new Error("Godot export is not a valid WebAssembly binary.");
+          }
+          const parts = [];
+          for (let offset = 0, index = 0; offset < original.length; offset += partSize, index++) {
+            const partPath = `${path}.part${index}`;
+            fs.writeFileSync(partPath, original.subarray(offset, Math.min(offset + partSize, original.length)));
+            parts.push(`/index.wasm.part${index}`);
+          }
+          const rebuilt = Buffer.concat(parts.map((part) =>
+            fs.readFileSync(`godot/build/web/${part.slice(1)}`)
+          ));
+          if (!original.equals(rebuilt)) {
+            throw new Error("Split WebAssembly parts do not match the original export.");
+          }
+          fs.writeFileSync("godot/build/web/index.wasm.parts.json", JSON.stringify({
+            size: original.length,
+            parts
+          }));
+          fs.unlinkSync(path);
+          console.log(`Validated ${parts.length} WebAssembly parts; ${original.length} bytes total.`);
+          NODE
+
+      - name: Bundle Three.js client and Godot Web export on one origin
+        run: |
+          mkdir -p public/godot
+          cp -R godot/build/web/. public/godot/
+          test -f public/index.html
+          test -f public/godot/index.html
+          test -f public/godot/index.wasm.parts.json
+
+      - name: Validate multiplayer protocol and crossplay engine
+        run: npm run check
+
+      - name: Deploy Godot production Worker
+        run: npx --yes wrangler@4 deploy --config wrangler.toml
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
