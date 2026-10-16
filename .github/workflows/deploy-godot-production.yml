@@ -55,23 +55,35 @@ jobs:
           mkdir -p godot/build/web
           "$GODOT" --headless --path godot --export-release "Web" build/web/index.html
 
-      - name: Brotli-compress the Godot WebAssembly
+      - name: Split WebAssembly into Cloudflare-safe parts
         shell: bash
         run: |
           node <<'NODE'
           const fs = require("node:fs");
-          const zlib = require("node:zlib");
           const path = "godot/build/web/index.wasm";
           const original = fs.readFileSync(path);
-          const compressed = zlib.brotliCompressSync(original, {
-            params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 9 }
-          });
-          fs.writeFileSync(`${path}.br`, compressed);
-          fs.unlinkSync(path);
-          console.log(`WebAssembly: ${original.length} bytes -> ${compressed.length} bytes`);
-          if (compressed.length > 25 * 1024 * 1024) {
-            throw new Error("Compressed WebAssembly still exceeds Cloudflare's 25 MiB asset limit.");
+          const partSize = 20 * 1024 * 1024;
+          if (original.subarray(0, 4).toString("hex") !== "0061736d") {
+            throw new Error("Godot export is not a valid WebAssembly binary.");
           }
+          const parts = [];
+          for (let offset = 0, index = 0; offset < original.length; offset += partSize, index++) {
+            const partPath = `${path}.part${index}`;
+            fs.writeFileSync(partPath, original.subarray(offset, Math.min(offset + partSize, original.length)));
+            parts.push(`/index.wasm.part${index}`);
+          }
+          const rebuilt = Buffer.concat(parts.map((part) =>
+            fs.readFileSync(`godot/build/web/${part.slice(1)}`)
+          ));
+          if (!original.equals(rebuilt)) {
+            throw new Error("Split WebAssembly parts do not match the original export.");
+          }
+          fs.writeFileSync("godot/build/web/index.wasm.parts.json", JSON.stringify({
+            size: original.length,
+            parts
+          }));
+          fs.unlinkSync(path);
+          console.log(`Validated ${parts.length} WebAssembly parts; ${original.length} bytes total.`);
           NODE
 
       - name: Deploy game and multiplayer Worker
