@@ -293,7 +293,7 @@ func _update_combat(delta: float) -> void:
 		if not _local_is_down() and pos.distance_to(player_pos) < radius + 22.0:
 			_damage_player(_local_player_id(), damage_per_second * delta)
 		if room_connected:
-					for teammate in remote_players:
+			for teammate in remote_players:
 				var teammate_id := str(teammate.get("id", ""))
 				if _vital_is_out(teammate_id):
 					continue
