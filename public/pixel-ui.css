@@ -225,3 +225,11 @@ html,body,#app { background: #102e46; color: #f8ebca; }
 @media (orientation:portrait) {
   .home-screen { width:min(100vw,177.7778vh); height:min(100vh,56.25vw); }
 }
+
+
+/* The provided title art already contains its hills, so remove the old vector overlays. */
+.home-screen .kingdom-vista::before,
+.home-screen .kingdom-vista::after {
+  content:none !important;
+  display:none !important;
+}
