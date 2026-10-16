@@ -43,3 +43,13 @@ Important: The preview branch must pass Godot build, JavaScript tests and live m
 Crossplay abilities have a 20-second server cooldown; Three.js displays the server cooldown and Godot triggers the skill with Space. Server positions are reconciled against local client predictions. Browser combat simulation is disabled for the crossplay ruleset.
 
 Mixed-engine invites: `/?room=<ID>` opens the Three.js browser, and `/godot/?room=<ID>` opens the Godot 4.3 browser. On the crossplay preview Worker both links join the **same** Durable Object room. The Three.js lobby copies both links for the room owner.
+
+## Stage 3: web lobby -> Godot battlefield -> web settlement
+
+`/` (Three.js + HTML/CSS) is the **only player-facing home**, hero select, lobby, room settings and result page. In `crossplay-v1`, a `start` message or late join into an active room transitions from the website to `/godot/?room=<ID>&hero=<ID>`.
+
+The website stores the Worker-issued resume token in **same-origin sessionStorage**, then closes its WebSocket with `4100` / `handoff`. Cloudflare reserves that exact player ID, character, host role, and slot for **up to 120 seconds** during the Godot Web load; normal unexpected disconnects retain 30 seconds. The resume token stays out of the URL. Godot connects with the original room and token, takes over battle rendering, scene, animation, controls and skills, while the Worker/Durable Object owns all combat outcomes.
+
+After a completed fight, Godot navigates to the website at `/?result=victory` or `/?result=defeat`. A deliberate escape/button exit routes to `/?result=exit`; `/godot/` with no room returns to `/`. The legacy `?classic=1` branch of the website is developer-only, not a second player-facing mode.
+
+Only the isolated preview Worker bundles both frontends (`public/` plus generated `public/godot/`) with a single GameHub Durable Object. This work requires actual Godot 4.3 export and browser/device validation before any production migration.

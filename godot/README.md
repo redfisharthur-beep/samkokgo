@@ -24,3 +24,7 @@ For manual deployments on this integration branch, `npm run deploy` targets the 
 ## Cross-engine co-op preview
 
 The Godot and Three.js browsers can now share a `crossplay-v1` test room via the same preview Worker. The Godot client is mounted at `/godot/`, the Three.js client at `/`. Enemy combat, rewards, upgrades, revives and final result are computed by Cloudflare, not the host browser. Preview can be deployed only after the Godot build passes and Cloudflare secrets are configured; mixed-client gameplay requires live verification.
+
+### Single-entry game architecture
+
+The official player route begins at the Three.js / HTML home (`/`): choose hero, create/join a room, configure and start. The site transfers the existing WebSocket identity to Godot Web (`/godot/`) for the real battlefield. Godot restores the token from sessionStorage, then exclusively handles the battle controls, graphics, effects and upgrades. Cloudflare is the shared server-side combat authority. Godot returns to HTML settlement after victory, defeat, or exit. This preview remains subject to CI Godot Web export and real-device testing.
