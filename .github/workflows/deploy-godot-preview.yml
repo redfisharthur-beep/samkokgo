@@ -5,6 +5,7 @@ on:
     branches: [godot4-integration]
     paths:
       - "godot/**"
+      - "public/**"
       - "shared/**"
       - "worker.js"
       - "wrangler.godot-preview.toml"
