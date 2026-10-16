@@ -66,7 +66,8 @@ jobs:
           const compressed = zlib.brotliCompressSync(original, {
             params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 9 }
           });
-          fs.writeFileSync(path, compressed);
+          fs.writeFileSync(`${path}.br`, compressed);
+          fs.unlinkSync(path);
           console.log(`WebAssembly: ${original.length} bytes -> ${compressed.length} bytes`);
           if (compressed.length > 25 * 1024 * 1024) {
             throw new Error("Compressed WebAssembly still exceeds Cloudflare's 25 MiB asset limit.");
