@@ -1,0 +1,34 @@
+name: Godot 4.3 project check
+
+on:
+  push:
+    branches: [godot4-integration]
+    paths:
+      - "godot/**"
+      - ".github/workflows/godot-check.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "godot/**"
+      - ".github/workflows/godot-check.yml"
+  workflow_dispatch:
+
+jobs:
+  import-project:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Godot 4.3 headless
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip \
+            --output /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          chmod +x /tmp/godot/Godot_v4.3-stable_linux.x86_64
+          echo "/tmp/godot" >> "$GITHUB_PATH"
+
+      - name: Import and parse Godot project
+        run: godot --headless --editor --path godot --quit
