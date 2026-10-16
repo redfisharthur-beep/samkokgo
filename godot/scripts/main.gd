@@ -218,6 +218,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mouse := event as InputEventMouseButton
 		if mouse.pressed:
+			if crossplay_mode and mode == "battle" and mouse.button_index == MOUSE_BUTTON_LEFT and mouse.position.distance_to(Vector2(get_viewport_rect().size.x - 90.0, get_viewport_rect().size.y - 90.0)) < 48.0:
+				if ability_ready_at <= Time.get_unix_time_from_system() * 1000.0:
+					network.send_action({"type": "ability"})
+				return
 			if mode == "lobby":
 				_handle_lobby_click(mouse.position)
 			elif mode in ["victory", "defeat"]:
