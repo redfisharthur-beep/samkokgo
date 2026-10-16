@@ -165,12 +165,12 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 		if event is InputEventScreenTouch:
 			var exit_touch := event as InputEventScreenTouch
-			if exit_touch.pressed and Rect2(12.0, 6.0, 115.0, 65.0).has_point(exit_touch.position):
+			if exit_touch.pressed and Rect2(15.0, 91.0, 105.0, 51.0).has_point(exit_touch.position):
 				_leave_battle_to_web()
 				return
 		if event is InputEventMouseButton:
 			var exit_mouse := event as InputEventMouseButton
-			if exit_mouse.pressed and Rect2(12.0, 6.0, 115.0, 65.0).has_point(exit_mouse.position):
+			if exit_mouse.pressed and Rect2(15.0, 91.0, 105.0, 51.0).has_point(exit_mouse.position):
 				_leave_battle_to_web()
 				return
 	if mode == "battle" and not upgrade_choices.is_empty():
@@ -1042,9 +1042,9 @@ func _draw_battle(size: Vector2) -> void:
 		_draw_player_vital(player_pos, own_vital, 1.0)
 	_draw_hud(size)
 	if OS.has_feature("web") and crossplay_mode:
-		draw_rect(Rect2(Vector2(15, 10), Vector2(100, 50)), Color("#293b33", 0.94))
-		draw_rect(Rect2(Vector2(15, 10), Vector2(100, 50)), Color("#c6a96d"), false, 2.0)
-		draw_string(UI_FONT, Vector2(18, 42), "返回大廳", HORIZONTAL_ALIGNMENT_CENTER, 94, 17, PAPER)
+		draw_rect(Rect2(Vector2(15, 94), Vector2(100, 44)), Color("#293b33", 0.94))
+		draw_rect(Rect2(Vector2(15, 94), Vector2(100, 44)), Color("#c6a96d"), false, 2.0)
+		draw_string(UI_FONT, Vector2(18, 122), "返回大廳", HORIZONTAL_ALIGNMENT_CENTER, 94, 17, PAPER)
 	if moving_touch >= 0:
 		draw_circle(move_origin, 43.0, Color(0.18, 0.2, 0.17, 0.22))
 		draw_circle(move_origin + move_vector * 34.0, 18.0, Color("#9caf9a"))
