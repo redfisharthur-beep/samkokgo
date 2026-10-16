@@ -158,15 +158,21 @@ func _process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if mode == "battle" and OS.has_feature("web"):
-		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
-			_leave_battle_to_web()
-			return
-		if event is InputEventScreenTouch and event.pressed and Rect2(12.0, 6.0, 115.0, 65.0).has_point(event.position):
-			_leave_battle_to_web()
-			return
-		if event is InputEventMouseButton and event.pressed and Rect2(12.0, 6.0, 115.0, 65.0).has_point(event.position):
-			_leave_battle_to_web()
-			return
+		if event is InputEventKey:
+			var exit_key := event as InputEventKey
+			if exit_key.pressed and exit_key.keycode == KEY_ESCAPE:
+				_leave_battle_to_web()
+				return
+		if event is InputEventScreenTouch:
+			var exit_touch := event as InputEventScreenTouch
+			if exit_touch.pressed and Rect2(12.0, 6.0, 115.0, 65.0).has_point(exit_touch.position):
+				_leave_battle_to_web()
+				return
+		if event is InputEventMouseButton:
+			var exit_mouse := event as InputEventMouseButton
+			if exit_mouse.pressed and Rect2(12.0, 6.0, 115.0, 65.0).has_point(exit_mouse.position):
+				_leave_battle_to_web()
+				return
 	if mode == "battle" and not upgrade_choices.is_empty():
 		if event is InputEventScreenTouch and event.pressed:
 			_choose_upgrade(_choice_at(event.position))
