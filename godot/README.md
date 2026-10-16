@@ -1,23 +1,18 @@
-# Godot 4 integration scaffold
+# Godot 4 combat prototype
 
-This branch adds a separate Godot 4 client scaffold while keeping the current browser game and Cloudflare Worker in place.
+This branch contains an isolated Godot 4.3 prototype. The existing browser game and Cloudflare deployment remain untouched on `main`.
 
-## What it proves
+## Playable systems in this prototype
 
-- Godot client can call the existing `/api/rooms`, `/api/create`, and `/api/quick-join` routes.
-- It joins the existing `/ws?room=…&hero=…` WebSocket endpoint and parses the existing welcome, presence, and start messages.
-- Web builds derive the service origin from the page URL. Native builds use `http://127.0.0.1:8787` unless `worker_base_url` is set in the `CloudflareRoom` node.
-- The project uses Godot 4's Compatibility renderer, suitable for its WebGL 2 export path.
+- A 6-minute survivors-style run with a Morandi woodland battlefield.
+- Liu Bei moves with WASD/arrow keys or by dragging from any touch point.
+- Automatic nearest-enemy spear shots with hit sparks and impact particles.
+- Chasing melee soldiers and retreating ranged soldiers that fire aimed projectiles.
+- Experience drops, level-up card choices, stat upgrades, an elite boss at minute five, and victory/defeat screens.
+- The lobby can create or quick-join through the existing Cloudflare room API.
 
-## Open and run
+Run the main scene in Godot 4.3. The GitHub Actions workflow imports the project and starts it headlessly after each change.
 
-Open this folder in Godot 4.x and run the main scene. For local testing, run the existing Worker with `npm run dev` from the repository root. For native testing against a deployed Worker, set `worker_base_url` to the Worker HTTPS origin in the CloudflareRoom node.
+## Current scope
 
-The scene is a networking harness, not the finished game. Character art, combat simulation, skill effects, input controls, and the Godot export preset still need to be migrated and validated in Godot. The deployed browser version is unchanged.
-
-## Next migration steps
-
-1. Port the combat loop and input into Godot nodes while preserving the current room message schema.
-2. Replace procedural block figures with coherent 128×128 pixel-art sprite sheets or authored 2.5D models and animation states.
-3. Validate 2–6 browser clients and mobile touch controls in a Web export.
-4. Add an export preset and place validated Web export files under the Cloudflare Assets directory.
+The combat is a single-player prototype. The room API can connect players, but their positions, enemies, combat state, and upgrades are not yet synchronized. The figures and battlefield are temporary procedural shapes, not the requested detailed pixel-art assets or final 2.5D models. A validated Godot Web export and Cloudflare hosting configuration are still to be added. The deployed browser game is unchanged.
