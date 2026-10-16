@@ -10,6 +10,7 @@ test("stable v1 rulesets retain each engine's duration", () => {
   assert.equal(RULESETS["godot-alpha"].engine, "godot");
   assert.equal(durationForRuleset("threejs-alpha"), 720);
   assert.equal(durationForRuleset("godot-alpha"), 360);
+  assert.equal(durationForRuleset("crossplay-v1"), 360);
 });
 test("legacy clients default to browser rooms", () => {
   assert.equal(resolveRuleset(undefined), "threejs-alpha");
@@ -24,10 +25,11 @@ test("invalid and cross-engine room joins are rejected", () => {
 test("both client implementations send their ruleset", () => {
   const js = readFileSync(new URL("../public/main.js", import.meta.url), "utf8");
   const gd = readFileSync(new URL("../godot/scripts/cloudflare_room.gd", import.meta.url), "utf8");
-  assert.ok(js.includes('const RULESET = "threejs-alpha"'));
+  assert.ok(js.includes('"crossplay-v1"'));
+  assert.ok(js.includes('"threejs-alpha"'));
   assert.ok(js.includes('api(protocolPath("/api/rooms")'));
   assert.ok(js.includes('&ruleset=${RULESET}&protocol=${PROTOCOL_VERSION}'));
-  assert.ok(gd.includes('const RULESET := "godot-alpha"'));
+  assert.ok(gd.includes('const RULESET := "crossplay-v1"'));
   assert.ok(gd.includes('_protocol_query("?")'));
   assert.ok(gd.includes('_protocol_query("&")'));
 });
@@ -41,4 +43,12 @@ test("manual branch deploy also cannot overwrite production", () => {
   const config = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.ok(config.includes('name = "samkokgo-browser-preview"'));
   assert.ok(!config.includes('name = "samkokgo"'));
+});
+
+test("crossplay preview hosts both frontends on one Durable Object origin", () => {
+  const config = readFileSync(new URL("../wrangler.godot-preview.toml", import.meta.url), "utf8");
+  const workflow = readFileSync(new URL("../.github/workflows/deploy-godot-preview.yml", import.meta.url), "utf8");
+  assert.match(config, /directory = "\.\/public"/);
+  assert.match(config, /\/godot\/index\.wasm/);
+  assert.match(workflow, /cp -R godot\/build\/web\/\. public\/godot\//);
 });

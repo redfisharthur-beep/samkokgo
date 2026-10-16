@@ -3,10 +3,10 @@ main = "worker.js"
 compatibility_date = "2026-10-15"
 
 [assets]
-directory = "./godot/build/web"
+directory = "./public"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*", "/ws", "/index.wasm"]
+run_worker_first = ["/api/*", "/ws", "/godot/index.wasm"]
 
 [[durable_objects.bindings]]
 name = "GAME_HUB"

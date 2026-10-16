@@ -25,3 +25,17 @@ Room snapshots contain `room` and `players[]`; rooms now include `ruleset`, `pro
 - The preview Action requires repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. A passing Action and online test are still required to confirm deployment.
 
 The `godot4-integration` branch's default `wrangler.toml` also targets `samkokgo-browser-preview` for manual `npm run deploy` commands, preventing a local deploy from overwriting production. The two preview Workers have independent Durable Object storage and cannot share room IDs until explicitly moved to one common service.
+
+## Server-owned cross-engine battle preview (Stage 2)
+
+The shared `crossplay-v1` ruleset is available on the isolated preview deployment.
+Both renderers now default to `crossplay-v1` in this branch, while Three.js can use `?classic=1` for its legacy engine-specific mode. The two legacy rulesets remain separated for compatibility.
+
+Cloudflare Durable Objects runs the combat simulation on 250ms alarms, handling enemy spawning and movement, hero auto-attacks, health, boss (5-minute spawn), six-minute result, experience, upgrade eligibility and revival. Movement is server-integrated from direction/delta; client-reported absolute coordinates are ignored. Direct client enemy and damage snapshots are rejected in crossplay rooms.
+
+The Godot preview Worker serves both frontends on **one origin**:
+- `/`: Three.js renderer
+- `/godot/`: Godot 4.3 Web renderer
+- `/api/*` and `/ws`: common multiplayer Durable Object
+
+Important: The preview branch must pass Godot build, JavaScript tests and live mixed-engine 2-client / 4-6-client checks before claiming the experience production-ready. The `main` production deployment remains unchanged. These are prototype gameplay rules and are **not** the original engine-specific rules.

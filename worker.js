@@ -40,7 +40,7 @@ async function serveWasm(env, requestUrl, prefix = "") {
   }
 
   const responses = await Promise.all(manifest.parts.map((path) =>
-    env.ASSETS.fetch(new Request(new URL(path, requestUrl), { headers: assetHeaders }))
+    env.ASSETS.fetch(new Request(new URL(prefix + path, requestUrl), { headers: assetHeaders }))
   ));
   if (responses.some((response) => !response.ok || !response.body ||
       response.headers.get("content-type")?.includes("text/html"))) {
