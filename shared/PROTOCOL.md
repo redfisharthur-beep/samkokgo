@@ -41,3 +41,5 @@ The Godot preview Worker serves both frontends on **one origin**:
 Important: The preview branch must pass Godot build, JavaScript tests and live mixed-engine 2-client / 4-6-client checks before claiming the experience production-ready. The `main` production deployment remains unchanged. These are prototype gameplay rules and are **not** the original engine-specific rules.
 
 Crossplay abilities have a 20-second server cooldown; Three.js displays the server cooldown and Godot triggers the skill with Space. Server positions are reconciled against local client predictions. Browser combat simulation is disabled for the crossplay ruleset.
+
+Mixed-engine invites: `/?room=<ID>` opens the Three.js browser, and `/godot/?room=<ID>` opens the Godot 4.3 browser. On the crossplay preview Worker both links join the **same** Durable Object room. The Three.js lobby copies both links for the room owner.

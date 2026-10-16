@@ -1912,7 +1912,14 @@ function installControls() {
   $("gameLock").addEventListener("click", () => sendRoomAction("lock"));
   $("inviteButton").addEventListener("click", async () => {
     if (!appState.roomId) return;
-    try { await navigator.clipboard.writeText(`${location.origin}/?room=${appState.roomId}${RULESET === "crossplay-v1" ? "" : "&classic=1"}`); showToast("邀請連結已複製"); }
+    try {
+      const browserLink = `${location.origin}/?room=${appState.roomId}${RULESET === "crossplay-v1" ? "" : "&classic=1"}`;
+      const invitation = RULESET === "crossplay-v1"
+        ? `Three.js: ${browserLink}\nGodot 4.3: ${location.origin}/godot/?room=${appState.roomId}`
+        : browserLink;
+      await navigator.clipboard.writeText(invitation);
+      showToast("邀請連結已複製");
+    }
     catch { showToast("請使用瀏覽器分享功能邀請"); }
   });
   $("fullscreen").addEventListener("click", () => document.documentElement.requestFullscreen?.().catch(() => {}));

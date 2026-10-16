@@ -63,6 +63,12 @@ func _ready() -> void:
 	network.api_result.connect(_on_api_result)
 	network.room_event.connect(_on_room_event)
 	network.connection_changed.connect(_on_connection_changed)
+	if OS.has_feature("web"):
+		var invited_room := str(JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('room') || ''"))
+		if invited_room.length() == 8:
+			room_id = invited_room.to_upper()
+			status_text = "透過邀請連結加入房間…"
+			network.join_room(room_id)
 	queue_redraw()
 
 func _process(delta: float) -> void:
