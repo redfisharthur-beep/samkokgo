@@ -44,10 +44,10 @@ func _draw_hud(size: Vector2) -> void:
 	var cream := Color("#fff0cb")
 	var blood := Color("#ca5650")
 	var xp_color := Color("#8fcbad")
-	var base := Color("#203647")
-	var gilt := Color("#a47a4b")
-	# Deep navy band, two-pixel gold keylines, pixel bevels.
-	draw_rect(Rect2(Vector2(0, 0), Vector2(size.x, top_height)), Color("#121f30", 0.97))
+	var base := Color("#38271f")
+	var gilt := Color("#b58243")
+	# Deep walnut band and stepped gold keylines echo the title-screen plaques.
+	draw_rect(Rect2(Vector2(0, 0), Vector2(size.x, top_height)), Color("#211915", 0.97))
 	draw_rect(Rect2(Vector2(0, top_height - 6), Vector2(size.x, 4)), gilt)
 	draw_rect(Rect2(Vector2(0, top_height - 2), Vector2(size.x, 2)), accent)
 	draw_rect(Rect2(Vector2(16, 12), Vector2(4, top_height - 24)), accent)
@@ -68,7 +68,7 @@ func _draw_hud(size: Vector2) -> void:
 	var clock_text: String = "%02d:%02d" % [minutes / 60, minutes % 60]
 	var clock_w: float = 153.0 if not compact else 124.0
 	var clock_rect := Rect2(Vector2(size.x * 0.5 - clock_w * 0.5, 15), Vector2(clock_w, top_height - 30))
-	_frame_panel(clock_rect, Color("#3c3540"))
+	_frame_panel(clock_rect, Color("#493027"))
 	_pixel_text(Vector2(clock_rect.position.x, 52), clock_text, 31 if not compact else 24, cream, HORIZONTAL_ALIGNMENT_CENTER, clock_w)
 	_pixel_text(Vector2(clock_rect.position.x, 72), "戰場計時", 13, accent, HORIZONTAL_ALIGNMENT_CENTER, clock_w)
 	var party_w: float = minf(230.0, size.x * 0.28)
@@ -81,7 +81,7 @@ func _draw_hud(size: Vector2) -> void:
 		if i > 0 and i <= remote_players.size():
 			active = not _vital_is_out(str(remote_players[i - 1].get("id", "")))
 		var dot_color: Color = Color("#a9bf9a") if active else Color("#485469")
-		draw_rect(Rect2(Vector2(dot_x, 50), Vector2(17, 17)), Color("#182637"))
+		draw_rect(Rect2(Vector2(dot_x, 50), Vector2(17, 17)), Color("#251b17"))
 		draw_rect(Rect2(Vector2(dot_x + 2, 52), Vector2(13, 13)), dot_color)
 		draw_rect(Rect2(Vector2(dot_x + 5, 54), Vector2(7, 4)), cream if active else Color("#6d7680"))
 	# The boss frame appears BELOW the header and never overlaps the timer.
@@ -95,8 +95,8 @@ func _draw_hud(size: Vector2) -> void:
 	if crossplay_mode:
 		var ability_center := Vector2(size.x - 90.0, size.y - 90.0)
 		var ready: bool = ability_ready_at <= Time.get_unix_time_from_system() * 1000.0
-		var ability_color: Color = Color("#ca5242") if ready else Color("#525766")
-		draw_rect(Rect2(ability_center - Vector2(51, 49), Vector2(102, 97)), Color("#162434", .9))
+		var ability_color: Color = Color("#bf4a36") if ready else Color("#675952")
+		draw_rect(Rect2(ability_center - Vector2(51, 49), Vector2(102, 97)), Color("#251a16", .94))
 		draw_rect(Rect2(ability_center - Vector2(46, 44), Vector2(92, 87)), accent if ready else gilt)
 		draw_rect(Rect2(ability_center - Vector2(42, 40), Vector2(84, 79)), ability_color)
 		draw_rect(Rect2(ability_center - Vector2(33, 29), Vector2(66, 8)), Color("#f7d39a", .25))

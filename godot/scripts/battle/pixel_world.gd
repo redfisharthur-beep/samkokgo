@@ -6,6 +6,9 @@ const PIXEL_ACTOR_SCENE: PackedScene = preload("res://scenes/battle/pixel_actor.
 const TERRAIN: Texture2D = preload("res://assets/pixel/world/ground.svg")
 const PROPS: Texture2D = preload("res://assets/pixel/world/props.svg")
 const PICKUP: Texture2D = preload("res://assets/pixel/world/energy.svg")
+const BATTLEFIELD: Texture2D = preload("res://assets/battlefield-premium.webp")
+const HIT_LIGHT: AudioStream = preload("res://assets/audio/hit-light.wav")
+const HIT_HEAVY: AudioStream = preload("res://assets/audio/hit-heavy.wav")
 const TILE_SIZE := Vector2i(64, 32)
 const PROP_SIZE := Vector2i(96, 112)
 const HERO_IDS := ["liubei", "caocao", "sunquan", "lvbu"]
@@ -21,10 +24,27 @@ var props: Array[Dictionary] = []
 var cloud_shift := Vector2.ZERO
 var _elapsed := 0.0
 var _last_health: Dictionary = {}
+var _camera_shake := 0.0
+var _backdrop: Sprite2D
+var _hit_audio: Array[AudioStreamPlayer] = []
+var _next_audio := 0
 var _ready_for_state := false
 
 func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_backdrop = Sprite2D.new()
+	_backdrop.name = "BattlefieldBackdrop"
+	_backdrop.texture = BATTLEFIELD
+	_backdrop.centered = true
+	_backdrop.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	add_child(_backdrop)
+	move_child(_backdrop, 0)
+	for index in range(4):
+		var player := AudioStreamPlayer.new()
+		player.name = "HitAudio_%d" % index
+		player.volume_db = -13.0
+		add_child(player)
+		_hit_audio.append(player)
 	_create_tilemap()
 	_create_props()
 	_ready_for_state = true
@@ -78,7 +98,13 @@ func refresh(main, delta: float) -> void:
 	_elapsed += delta
 	var size: Vector2 = main.get_viewport_rect().size
 	cloud_shift = (main.player_pos - size * 0.5) * 0.55
+	var cover_scale := maxf(size.x / BATTLEFIELD.get_width(), size.y / BATTLEFIELD.get_height())
+	_backdrop.scale = Vector2.ONE * cover_scale
+	_backdrop.position = size * 0.5 - cloud_shift * 0.16
+	_camera_shake = maxf(0.0, _camera_shake - delta * 24.0)
+	position = Vector2(sin(_elapsed * 121.0), cos(_elapsed * 157.0)) * _camera_shake
 	ground.position = size * 0.5 - cloud_shift
+	ground.modulate = Color(1.0, 1.0, 1.0, 0.54)
 	for item in props:
 		var picture: Sprite2D = item["node"]
 		picture.position = size * 0.5 + Vector2(item["anchor"]) - cloud_shift
@@ -88,6 +114,12 @@ func refresh(main, delta: float) -> void:
 	me.set("downed", main._local_is_down())
 	me.call("set_visual_position", main.player_pos, delta)
 	me.call("set_health", main.hp, main.max_hp, false)
+	if _last_health.has("self") and float(main.hp) < float(_last_health["self"]):
+		me.call("play_hit")
+		_spawn_hit(main.player_pos, true)
+		_camera_shake = maxf(_camera_shake, 7.0)
+		_play_hit_sound(true)
+	_last_health["self"] = float(main.hp)
 
 	for player in main.remote_players:
 		var id := str(player.get("id", ""))
@@ -143,7 +175,11 @@ func refresh(main, delta: float) -> void:
 		var hp := float(enemy.get("hp", 1.0))
 		avatar.call("set_health", hp, float(enemy.get("max_hp", 20.0)), true)
 		if _last_health.has(actor_id) and hp < float(_last_health[actor_id]):
-			_spawn_hit(next)
+			var heavy_hit := float(_last_health[actor_id]) - hp >= 15.0 or enemy_kind == "boss"
+			_spawn_hit(next, heavy_hit)
+			avatar.call("play_hit")
+			_camera_shake = maxf(_camera_shake, 5.0 if heavy_hit else 2.5)
+			_play_hit_sound(heavy_hit)
 			if main.player_pos.distance_to(next) < 280.0:
 				me.call("play_attack")
 		_last_health[actor_id] = hp
@@ -169,23 +205,46 @@ func _ensure_actor(id: String, kind: String) -> Node2D:
 	actors[id] = actor
 	return actor
 
-func _spawn_hit(position_on_screen: Vector2) -> void:
-	# Light, short-lived palette-matched sparks, clearly separated from sprites.
+func _spawn_hit(position_on_screen: Vector2, heavy: bool = false) -> void:
+	# A bright center flash and sharp pixel chips make each confirmed hit readable.
 	var burst := Node2D.new()
 	burst.position = position_on_screen
 	effects.add_child(burst)
-	for j in range(5):
+	var flash := Polygon2D.new()
+	flash.color = Color("#fff2bd")
+	flash.polygon = PackedVector2Array([
+		Vector2(0, -12), Vector2(4, -4), Vector2(12, 0), Vector2(4, 4),
+		Vector2(0, 12), Vector2(-4, 4), Vector2(-12, 0), Vector2(-4, -4)
+	])
+	burst.add_child(flash)
+	var flash_tween := create_tween()
+	flash_tween.tween_property(flash, "scale", Vector2.ONE * (2.1 if heavy else 1.5), 0.13)
+	flash_tween.parallel().tween_property(flash, "modulate:a", 0.0, 0.13)
+	for j in range(8):
 		var chip := Polygon2D.new()
-		var c := Color("#f1d993") if j % 2 == 0 else Color("#d18d69")
+		var c := Color("#fff0b5") if j % 3 == 0 else (Color("#eeb65f") if j % 2 == 0 else Color("#d26b55"))
 		chip.color = c
-		chip.polygon = PackedVector2Array([Vector2(-3, -2), Vector2(3, -2), Vector2(3, 2), Vector2(-3, 2)])
+		var chip_size := 4.0 if heavy else 3.0
+		chip.polygon = PackedVector2Array([Vector2(-chip_size, -1), Vector2(chip_size, -1), Vector2(chip_size - 1, 1), Vector2(-chip_size + 1, 1)])
 		burst.add_child(chip)
-		var theta := (float(j) / 5.0) * TAU
-		var target := Vector2(cos(theta) * 24.0, sin(theta) * 19.0)
+		var theta := (float(j) / 8.0) * TAU + 0.16
+		chip.rotation = theta
+		var radius := 31.0 if heavy else 23.0
+		var target := Vector2(cos(theta) * radius, sin(theta) * radius * 0.78)
 		var tween := create_tween()
-		tween.tween_property(chip, "position", target, 0.26)
-		tween.parallel().tween_property(chip, "modulate:a", 0.0, 0.26)
-	get_tree().create_timer(0.34).timeout.connect(burst.queue_free)
+		tween.tween_property(chip, "position", target, 0.22)
+		tween.parallel().tween_property(chip, "rotation", theta + 0.8, 0.22)
+		tween.parallel().tween_property(chip, "modulate:a", 0.0, 0.22)
+	get_tree().create_timer(0.26).timeout.connect(burst.queue_free)
+
+func _play_hit_sound(heavy: bool) -> void:
+	if _hit_audio.is_empty():
+		return
+	var player := _hit_audio[_next_audio]
+	_next_audio = (_next_audio + 1) % _hit_audio.size()
+	player.stop()
+	player.stream = HIT_HEAVY if heavy else HIT_LIGHT
+	player.play()
 
 func _draw() -> void:
 	# Lightweight lighting washes preserve the underlying tile pixel pattern.

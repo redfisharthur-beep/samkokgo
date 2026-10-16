@@ -3,10 +3,10 @@ extends Node2D
 ## All hero/enemy sheets use 56x72 cells, four frames and six action/facing rows.
 ## The visual is passive: server-supplied positions, stats and hit events remain authoritative.
 
-const SHEET_LIUBEI: Texture2D = preload("res://assets/pixel/actors/liubei.svg")
-const SHEET_CAOCAO: Texture2D = preload("res://assets/pixel/actors/caocao.svg")
-const SHEET_SUNQUAN: Texture2D = preload("res://assets/pixel/actors/sunquan.svg")
-const SHEET_LVBU: Texture2D = preload("res://assets/pixel/actors/lvbu.svg")
+const SHEET_LIUBEI: Texture2D = preload("res://assets/pixel/actors/liubei-premium.png")
+const SHEET_CAOCAO: Texture2D = preload("res://assets/pixel/actors/caocao-premium.png")
+const SHEET_SUNQUAN: Texture2D = preload("res://assets/pixel/actors/sunquan-premium.png")
+const SHEET_LVBU: Texture2D = preload("res://assets/pixel/actors/lvbu-premium.png")
 const SHEET_GRUNT: Texture2D = preload("res://assets/pixel/actors/grunt.svg")
 const SHEET_RUNNER: Texture2D = preload("res://assets/pixel/actors/runner.svg")
 const SHEET_ARCHER: Texture2D = preload("res://assets/pixel/actors/archer.svg")
@@ -23,6 +23,7 @@ var health_back: Polygon2D
 var health_front: Polygon2D
 var last_world_pos := Vector2.ZERO
 var attack_seconds := 0.0
+var hit_tween: Tween
 var downed := false
 var _initialized := false
 
@@ -120,6 +121,19 @@ func play_attack() -> void:
 	var face := "back" if animated.animation.ends_with("back") else "front"
 	attack_seconds = 0.34
 	animated.play("attack_" + face)
+
+func play_hit() -> void:
+	if animated == null or downed:
+		return
+	if hit_tween and hit_tween.is_running():
+		hit_tween.kill()
+	animated.modulate = Color.WHITE
+	animated.scale = Vector2.ONE
+	hit_tween = create_tween()
+	hit_tween.tween_property(animated, "scale", Vector2(1.18, 0.88), 0.035)
+	hit_tween.parallel().tween_property(animated, "modulate", Color("#ffb37d"), 0.025)
+	hit_tween.tween_property(animated, "scale", Vector2.ONE, 0.11)
+	hit_tween.parallel().tween_property(animated, "modulate", Color.WHITE, 0.11)
 
 func set_health(hp: float, max_hp: float, show_bar: bool = true) -> void:
 	health_back.visible = show_bar

@@ -617,7 +617,7 @@ function paintGeneral(canvas, heroId) {
       pic.onload = () => resolve(pic);
       pic.onerror = () => resolve(null);
     });
-    pic.src = `/assets/pixel/actors/${heroId}.svg`;
+    pic.src = `/assets/pixel/actors/${heroId}-premium.png`;
     portraitCache.set(heroId, ready);
   }
   portraitCache.get(heroId).then((pic) => {

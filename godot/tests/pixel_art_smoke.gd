@@ -26,10 +26,23 @@ func _verify() -> void:
 				push_error("Missing sprite frames in " + kind + " / " + animation)
 				quit(1)
 				return
+		if kind in ["liubei", "caocao", "sunquan", "lvbu"]:
+			var premium_path := "res://assets/pixel/actors/%s-premium.png" % kind
+			var premium: Texture2D = load(premium_path)
+			if premium == null or premium.get_size() != Vector2(224, 432):
+				push_error("Premium hero atlas missing or wrong size: " + premium_path)
+				quit(1)
+				return
 	avatar.call("set_visual_position", Vector2(120, 80), 0.016, true)
 	avatar.call("play_attack")
+	avatar.call("play_hit")
 	var world: Node2D = world_resource.instantiate()
 	root.add_child(world)
+	var backdrop: Sprite2D = world.get_node_or_null("BattlefieldBackdrop")
+	if backdrop == null or backdrop.texture.get_size() != Vector2(1672, 941):
+		push_error("Premium 16:9 battlefield artwork did not load")
+		quit(1)
+		return
 	var ground: TileMapLayer = world.get_node("Ground")
 	if ground.tile_set == null or ground.get_used_cells().size() < 300:
 		push_error("Isometric tilemap is empty")
@@ -40,7 +53,7 @@ func _verify() -> void:
 		push_error("Depth props / Y-sort missing")
 		quit(1)
 		return
-	print("PIXEL ART SMOKE PASS: 8 actor atlases, 6 action/facing rows, 4 frames each, isometric tilemap and depth props.")
+	print("PIXEL ART SMOKE PASS: premium 16:9 battlefield, 4 upgraded hero atlases, 8 actor atlases, 6 action/facing rows, 4 frames each, isometric tilemap and depth props.")
 	world.queue_free()
 	avatar.queue_free()
 	quit(0)
