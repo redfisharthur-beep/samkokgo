@@ -154,3 +154,74 @@ html,body,#app { background: #102e46; color: #f8ebca; }
 }
 @media(prefers-reduced-motion:reduce) {.stage-hero {animation:none}}
 @keyframes hero-float {50% {margin-top:-3px}}
+
+
+/* Reference-matched 16:9 title screen */
+#app:has(.home-screen:not(.hidden)) { background:#10191d; }
+#app:has(.home-screen:not(.hidden)) #world { opacity:0; }
+.home-screen {
+  inset:auto; left:50%; top:50%; right:auto; bottom:auto;
+  width:min(100vw,177.7778vh); height:min(100vh,56.25vw);
+  transform:translate(-50%,-50%); overflow:hidden; background:#10191d;
+}
+.home-screen .kingdom-vista {
+  position:absolute; z-index:0; inset:0;
+  background:url("/assets/ui/samkokgo-splash.svg") center / 100% 100% no-repeat;
+  image-rendering:auto;
+}
+.home-screen::before,.home-screen::after { content:none !important; }
+.home-screen .home-glory,.home-screen .hero-stage,.home-screen .brand-title,
+.home-screen .brand-mark,.home-screen .hero-open,.home-screen .home-controls {
+  display:none !important;
+}
+.home-screen .home-actions { display:contents; }
+.home-screen .home-actions > button {
+  position:absolute; z-index:8; display:flex; align-items:center; justify-content:center;
+  gap:clamp(4px,.7vw,10px); margin:0; clip-path:none; cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+.home-screen #pickHero {
+  left:15.8%; top:80.6%; width:22.4%; height:8.5%; padding:0; border:0;
+  color:transparent; background:transparent; box-shadow:none; font-size:0; text-indent:-9999px;
+}
+.home-screen #pickHero > *, .home-screen #quickJoin > *, .home-screen #refreshRooms > * { opacity:0; }
+.home-screen #quickJoin {
+  left:38.4%; top:79.6%; width:22.8%; height:10.7%; padding:0; border:0;
+  color:transparent; background:transparent; box-shadow:none; font-size:0; text-indent:-9999px;
+}
+.home-screen #createRoom {
+  left:61.8%; top:80.5%; width:15.5%; height:8.7%;
+  padding:5px clamp(5px,.8vw,13px); border:3px solid #edc56b; border-radius:8px;
+  color:#fff1d3; background:linear-gradient(180deg,#503629,#2b2521);
+  box-shadow:inset 0 0 0 2px #7e6035,0 4px 0 #241814,0 9px 18px #0f0c0a88;
+  font-size:clamp(10px,1.05vw,17px); font-weight:900; letter-spacing:.04em; white-space:nowrap;
+}
+.home-screen #createRoom svg {
+  width:clamp(16px,2vw,27px); height:clamp(16px,2vw,27px); flex:none; stroke:#f4cd76;
+}
+.home-screen #createRoom span { font-size:inherit; }
+.home-screen #refreshRooms {
+  left:42.2%; top:91.1%; width:15.7%; height:8.4%; padding:0; border:0;
+  color:transparent; background:transparent; box-shadow:none; font-size:0; text-indent:-9999px;
+}
+.home-screen .room-browser {
+  display:none; position:absolute; z-index:12; left:50%; right:auto; top:50%;
+  width:min(360px,29%); max-height:32%; transform:translate(-50%,-50%);
+  border:3px solid #e7bd66; border-radius:10px;
+  background:linear-gradient(180deg,#342b26f5,#171b1cf5);
+  box-shadow:inset 0 0 0 3px #705332,0 10px 30px #101010bb;
+}
+.home-screen.rooms-open .room-browser { display:block; }
+.home-screen .room-browser h3 { color:#ffe3a6; font-size:clamp(13px,1.1vw,18px); }
+.home-screen .room-browser .room-drawer { max-height:22vh; }
+.home-screen .room-browser .room-card {
+  min-height:42px; color:#fff0d0; border-color:#9c7a45; background:#45362a;
+}
+.home-screen .room-browser .rooms-empty { color:#f4e2c1; }
+@media (max-width:900px) and (orientation:landscape) {
+  .home-screen { width:100vw; height:100vh; }
+  .home-screen #createRoom { font-size:clamp(10px,1.7vw,16px); }
+}
+@media (orientation:portrait) {
+  .home-screen { width:min(100vw,177.7778vh); height:min(100vh,56.25vw); }
+}
