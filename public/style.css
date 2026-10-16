@@ -294,3 +294,6 @@ button:focus-visible {outline:3px solid #ffe28f;outline-offset:3px;}
  .hero-picker .hero-choice canvas {height:65px;}
  .hero-description {margin:6px auto;padding:5px;}
 }
+
+/* Keep the general selector clickable above the canvas scene. */
+.hero-open { pointer-events:auto; }
