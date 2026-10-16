@@ -540,6 +540,7 @@ func _choose_upgrade(index: int) -> void:
 		network.send_action({"type": "level-choice", "upgradeId": _upgrade_id_for_label(chosen)})
 
 func _apply_upgrade_label(label: String) -> void:
+	var previous_max_hp := max_hp
 	match label:
 		"長槍淬鋒":
 			damage *= 1.28
@@ -555,6 +556,18 @@ func _apply_upgrade_label(label: String) -> void:
 			attack_range += 55.0
 			max_hp += 30.0
 			hp = minf(max_hp, hp + 50.0)
+	if room_connected:
+		var max_hp_increase := max_hp - previous_max_hp
+		for player_id_variant in player_vitals.keys():
+			var player_id := str(player_id_variant)
+			var vital: Dictionary = player_vitals[player_id]
+			vital["maxHp"] = float(vital.get("maxHp", previous_max_hp)) + max_hp_increase
+			player_vitals[player_id] = vital
+		var own_vital: Dictionary = player_vitals.get(network.self_id, {})
+		if not own_vital.is_empty():
+			own_vital["hp"] = hp
+			own_vital["maxHp"] = max_hp
+			player_vitals[network.self_id] = own_vital
 
 func _upgrade_id_for_label(label: String) -> String:
 	match label:
