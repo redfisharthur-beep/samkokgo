@@ -48,6 +48,7 @@ var sync_clock := 0.0
 var _sync_clock := 0.0
 var next_enemy_id := 1
 var next_pickup_id := 1
+var next_enemy_shot_id := 1
 var move_speed := 255.0
 var player_vitals: Dictionary = {}
 
@@ -214,6 +215,7 @@ func _start_battle(_send_room_start: bool = false) -> void:
 	_sync_clock = 0.0
 	next_enemy_id = 1
 	next_pickup_id = 1
+	next_enemy_shot_id = 1
 	boss_spawned = false
 	boss_hp = 0.0
 	enemies.clear()
@@ -299,7 +301,20 @@ func _update_combat(delta: float) -> void:
 				if not target.is_empty() and pos.distance_to(target["pos"]) < 520.0:
 					enemy["shot_clock"] = randf_range(2.1, 3.0)
 					var direction: Vector2 = (target["pos"] - pos).normalized()
-					enemy_shots.append({"pos": pos, "vel": direction * 215.0, "life": 3.5, "targetId": target["id"]})
+					var shot_id := "s-%d" % next_enemy_shot_id
+					next_enemy_shot_id += 1
+					enemy_shots.append({"pos": pos, "vel": direction * 215.0, "life": 3.5, "targetId": target["id"], "shotId": shot_id, "authoritative": true})
+					if room_connected and is_host:
+						var from_world := _screen_to_world(pos)
+						var to_world := _screen_to_world(target["pos"])
+						network.send_action({
+							"type": "enemy-shot-fx",
+							"from": {"x": from_world.x, "z": from_world.y},
+							"to": {"x": to_world.x, "z": to_world.y},
+							"targetId": str(target["id"]),
+							"shotId": shot_id,
+							"damage": 10
+						})
 					_emit_particles(pos, RUST, 5, 65.0)
 		if enemy["boss"]:
 			boss_hp = enemy["hp"]
@@ -432,6 +447,33 @@ func _all_players_out() -> bool:
 			return false
 	return true
 
+func _receive_enemy_shot(event: Dictionary) -> void:
+	var from_value: Variant = event.get("from", {})
+	var to_value: Variant = event.get("to", {})
+	if not from_value is Dictionary or not to_value is Dictionary:
+		return
+	var shot_id := str(event.get("shotId", ""))
+	if shot_id.is_empty():
+		return
+	for existing in enemy_shots:
+		if str(existing.get("shotId", "")) == shot_id:
+			return
+	var from_pos := _world_to_screen(Vector2(float(from_value.get("x", 0.0)), float(from_value.get("z", 0.0))))
+	var to_pos := _world_to_screen(Vector2(float(to_value.get("x", 0.0)), float(to_value.get("z", 0.0))))
+	var travel := to_pos - from_pos
+	if travel.length() < 1.0:
+		return
+	var duration := clampf(travel.length() / 215.0, 0.15, 3.5)
+	enemy_shots.append({
+		"pos": from_pos,
+		"vel": travel / duration,
+		"life": duration,
+		"targetId": str(event.get("targetId", "")),
+		"shotId": shot_id,
+		"damage": float(event.get("damage", 10.0)),
+		"authoritative": false
+	})
+
 func _update_projectiles(delta: float) -> void:
 	for i in range(shots.size() - 1, -1, -1):
 		var shot: Dictionary = shots[i]
@@ -471,7 +513,8 @@ func _update_projectiles(delta: float) -> void:
 		var target_id := str(shot.get("targetId", _local_player_id()))
 		var target_pos := _player_screen_position(target_id)
 		if target_pos.distance_to(Vector2(shot["pos"])) < 21.0:
-			_damage_player(target_id, 10.0)
+			if bool(shot.get("authoritative", false)):
+				_damage_player(target_id, float(shot.get("damage", 10.0)))
 			_emit_particles(target_pos, RUST, 12, 130.0)
 			enemy_shots.remove_at(i)
 		elif float(shot["life"]) <= 0.0:
@@ -651,6 +694,9 @@ func _on_room_event(event: Dictionary) -> void:
 	elif kind == "player-pickup":
 		if is_host:
 			_collect_shared_pickup(str(event.get("pickupId", "")))
+	elif kind == "enemy-shot-fx":
+		if not is_host:
+			_receive_enemy_shot(event)
 	elif kind == "level-choice":
 		if not is_host:
 			_apply_upgrade_id(str(event.get("upgradeId", "")))
