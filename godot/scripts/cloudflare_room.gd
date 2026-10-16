@@ -1,6 +1,9 @@
 extends Node
 class_name CloudflareRoom
 
+const PROTOCOL_VERSION := 1
+const RULESET := "godot-alpha"
+
 signal api_result(endpoint: String, payload: Dictionary)
 signal room_event(payload: Dictionary)
 signal connection_changed(state: String)
@@ -38,7 +41,7 @@ func join_room(target_room_id: String, hero_id: String = "liubei") -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_CLOSED:
 		socket.close()
 	socket = WebSocketPeer.new()
-	var url := _websocket_base_url() + "/ws?room=" + room_id.uri_encode() + "&hero=" + hero_id.uri_encode()
+	var url := _websocket_base_url() + "/ws?room=" + room_id.uri_encode() + "&hero=" + hero_id.uri_encode() + _protocol_query("&")
 	if not resume_token.is_empty():
 		url += "&resume=" + resume_token.uri_encode()
 	var error := socket.connect_to_url(url)
@@ -99,10 +102,13 @@ func _request_api(path: String, method: int, payload: Dictionary) -> void:
 	if method != HTTPClient.METHOD_GET:
 		headers.append("Content-Type: application/json")
 		body = JSON.stringify(payload)
-	var error := request.request(_base_url() + path, headers, method, body)
+	var error := request.request(_base_url() + path + _protocol_query("?"), headers, method, body)
 	if error != OK:
 		api_result.emit(path, {"error": "Request error %s" % error})
 		request.queue_free()
+
+func _protocol_query(separator: String) -> String:
+	return separator + "ruleset=" + RULESET + "&protocol=" + str(PROTOCOL_VERSION)
 
 func _base_url() -> String:
 	if not worker_base_url.strip_edges().is_empty():

@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
+import { PROTOCOL_VERSION, RULESETS, resolveRuleset, sameRuleset, durationForRuleset } from "./shared/protocol.mjs";
 
 const MAX_PLAYERS = 6;
-const ROUND_SECONDS = 12 * 60;
 const WORLD_LIMIT = 48;
 const WORLD_DEPTH_LIMIT = 27;
 
@@ -88,6 +88,16 @@ export class GameHub extends DurableObject {
 
   async fetch(request) {
     const url = new URL(request.url);
+    // Both renderers speak protocol v1 but use separate combat rulesets.
+    if (url.pathname === "/api/protocol" && request.method === "GET") {
+      return json({ protocolVersion: PROTOCOL_VERSION, rulesets: RULESETS });
+    }
+    const requestedRuleset = resolveRuleset(url.searchParams.get("ruleset"));
+    if (!requestedRuleset) return json({ error: "Unknown game ruleset" }, 400);
+    const clientVersion = url.searchParams.get("protocol");
+    if (clientVersion !== null && Number(clientVersion) !== PROTOCOL_VERSION) {
+      return json({ error: "Unsupported protocol version", supported: PROTOCOL_VERSION }, 426);
+    }
     // Godot sends an empty JSON body with room-creation and quick-join POSTs.
     // Consume bodies these routes do not use before returning a response; workerd
     // reports an exception if a Durable Object leaves the request body unread.
@@ -95,14 +105,14 @@ export class GameHub extends DurableObject {
       await request.arrayBuffer();
     }
     if (url.pathname === "/api/rooms" && request.method === "GET") {
-      return json({ rooms: await this.listRooms() });
+      return json({ rooms: await this.listRooms(requestedRuleset) });
     }
     if (url.pathname === "/api/create" && request.method === "POST") {
-      const room = await this.createRoom();
+      const room = await this.createRoom(requestedRuleset);
       return json({ roomId: room.id });
     }
     if (url.pathname === "/api/quick-join" && request.method === "POST") {
-      const room = await this.quickJoin();
+      const room = await this.quickJoin(requestedRuleset);
       return json({ roomId: room.id });
     }
     if (url.pathname === "/ws") {
@@ -111,22 +121,25 @@ export class GameHub extends DurableObject {
     return json({ error: "Not found" }, 404);
   }
 
-  async listRooms() {
+  async listRooms(requestedRuleset) {
     const rooms = (await this.ctx.storage.get("rooms")) ?? {};
     const visible = [];
     for (const room of Object.values(rooms)) {
+      if (!sameRuleset(room.ruleset, requestedRuleset)) continue;
       this.cleanDisconnected(room);
       const connected = this.ctx.getWebSockets(tagFor(room.id)).length;
       const players = connected + Object.keys(room.disconnected ?? {}).length;
       if (connected === 0) continue;
       if (this.canJoinPlaying(room) && !room.locked && players < room.maxPlayers) {
-        visible.push({ id: room.id, players, maxPlayers: room.maxPlayers, mapId: room.mapId, difficulty: room.difficulty, status: room.status });
+        visible.push({ id: room.id, players, maxPlayers: room.maxPlayers, mapId: room.mapId,
+          difficulty: room.difficulty, status: room.status, ruleset: room.ruleset ?? "threejs-alpha",
+          roundSeconds: durationForRuleset(room.ruleset) });
       }
     }
     return visible.sort((a, b) => b.players - a.players).slice(0, 20);
   }
 
-  async createRoom() {
+  async createRoom(requestedRuleset) {
     const rooms = (await this.ctx.storage.get("rooms")) ?? {};
     const id = crypto.randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase();
     const room = {
@@ -134,6 +147,9 @@ export class GameHub extends DurableObject {
       maxPlayers: MAX_PLAYERS,
       locked: false,
       status: "waiting",
+      ruleset: requestedRuleset,
+      protocolVersion: PROTOCOL_VERSION,
+      roundSeconds: durationForRuleset(requestedRuleset),
       hostId: null,
       startedAt: null,
       mapId: "forest",
@@ -146,10 +162,10 @@ export class GameHub extends DurableObject {
     return room;
   }
 
-  async quickJoin() {
+  async quickJoin(requestedRuleset) {
     const rooms = (await this.ctx.storage.get("rooms")) ?? {};
     const room = Object.values(rooms)
-      .filter((candidate) => this.canJoinPlaying(candidate) && !candidate.locked)
+      .filter((candidate) => sameRuleset(candidate.ruleset, requestedRuleset) && this.canJoinPlaying(candidate) && !candidate.locked)
       .map((candidate) => {
         this.cleanDisconnected(candidate);
         const connected = this.ctx.getWebSockets(tagFor(candidate.id)).length;
@@ -157,7 +173,7 @@ export class GameHub extends DurableObject {
       })
       .filter(({ candidate, count, connected }) => connected > 0 && count < candidate.maxPlayers)
       .sort((a, b) => b.count - a.count)[0]?.candidate;
-    return room ?? this.createRoom();
+    return room ?? this.createRoom(requestedRuleset);
   }
 
   async connect(request, url) {
@@ -169,6 +185,10 @@ export class GameHub extends DurableObject {
     const rooms = (await this.ctx.storage.get("rooms")) ?? {};
     const room = rooms[roomId];
     if (!room) return json({ error: "Room unavailable" }, 404);
+    if (!sameRuleset(room.ruleset, resolveRuleset(url.searchParams.get("ruleset"))) ||
+        (room.protocolVersion ?? PROTOCOL_VERSION) !== PROTOCOL_VERSION) {
+      return json({ error: "Incompatible room ruleset or protocol" }, 409);
+    }
     this.cleanDisconnected(room);
     const tag = tagFor(roomId);
     const existing = this.ctx.getWebSockets(tag);
@@ -328,7 +348,7 @@ export class GameHub extends DurableObject {
       room.gameStateSavedAt = 0;
       rooms[room.id] = room;
       await this.ctx.storage.put("rooms", rooms);
-      this.broadcast(room.id, { type: "start", startedAt: room.startedAt, duration: ROUND_SECONDS, mapId: room.mapId, difficulty: room.difficulty });
+      this.broadcast(room.id, { type: "start", startedAt: room.startedAt, duration: durationForRuleset(room.ruleset), mapId: room.mapId, difficulty: room.difficulty });
     }
   }
 
@@ -387,7 +407,10 @@ export class GameHub extends DurableObject {
   }
 
   publicRoom(room) {
-    return { id: room.id, maxPlayers: room.maxPlayers, locked: room.locked, status: room.status, startedAt: room.startedAt, mapId: room.mapId ?? "forest", difficulty: room.difficulty ?? "normal" };
+    return { id: room.id, maxPlayers: room.maxPlayers, locked: room.locked, status: room.status,
+      ruleset: room.ruleset ?? "threejs-alpha", protocolVersion: room.protocolVersion ?? PROTOCOL_VERSION,
+      roundSeconds: durationForRuleset(room.ruleset),
+      startedAt: room.startedAt, mapId: room.mapId ?? "forest", difficulty: room.difficulty ?? "normal" };
   }
 
   publicPlayer(player, offline = false) {

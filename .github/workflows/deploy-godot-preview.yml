@@ -1,4 +1,4 @@
-name: Deploy Godot game to production
+name: Deploy Godot preview (isolated from production)
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     paths:
       - "godot/**"
       - "worker.js"
-      - "wrangler.godot-production.toml"
+      - "wrangler.godot-preview.toml"
       - ".github/workflows/deploy-godot-production.yml"
   workflow_dispatch:
 
@@ -116,7 +116,7 @@ jobs:
           NODE
 
       - name: Deploy game and multiplayer Worker
-        run: npx --yes wrangler@4 deploy --config wrangler.godot-production.toml
+        run: npx --yes wrangler@4 deploy --config wrangler.godot-preview.toml
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

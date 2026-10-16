@@ -17,6 +17,9 @@ const DIFFICULTIES = ["easy", "normal", "hard"];
 const PIXEL_SKIN_COLORS = new Set([0xd6b99d, 0xcdb59e, 0xd7bda3, 0xd2b196, 0xc5a58d, 0xc9aa91, 0xcdb39a, 0xc8aa91, 0xb8957f]);
 const WORLD = { x: 48, z: 27 };
 const ROUND_SECONDS = 12 * 60;
+const PROTOCOL_VERSION = 1;
+const RULESET = "threejs-alpha";
+const protocolPath = (path) => `${path}${path.includes("?") ? "&" : "?"}ruleset=${RULESET}&protocol=${PROTOCOL_VERSION}`;
 const $ = (id) => document.getElementById(id);
 const ui = {
   home: $("home"), room: $("room"), hud: $("gameHud"), result: $("result"),
@@ -995,14 +998,14 @@ function setScreen(name) {
 
 async function createRoom() {
   try {
-    const data = await api("/api/create", { method: "POST", body: JSON.stringify({ heroId: appState.heroId }) });
+    const data = await api(protocolPath("/api/create"), { method: "POST", body: JSON.stringify({ heroId: appState.heroId }) });
     await joinRoom(data.roomId);
   } catch { showToast("目前無法建立房間"); }
 }
 
 async function quickJoin() {
   try {
-    const data = await api("/api/quick-join", { method: "POST", body: JSON.stringify({ heroId: appState.heroId }) });
+    const data = await api(protocolPath("/api/quick-join"), { method: "POST", body: JSON.stringify({ heroId: appState.heroId }) });
     await joinRoom(data.roomId);
   } catch { showToast("目前沒有可加入的房間"); }
 }
@@ -1021,7 +1024,7 @@ function connectRoomSocket(roomId) {
   try {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const resumeToken = localStorage.getItem(`samkokgo-resume-${roomId}`) ?? "";
-    const socket = new WebSocket(`${protocol}//${location.host}/ws?room=${encodeURIComponent(roomId)}&hero=${encodeURIComponent(appState.heroId)}&resume=${encodeURIComponent(resumeToken)}`);
+    const socket = new WebSocket(`${protocol}//${location.host}/ws?room=${encodeURIComponent(roomId)}&hero=${encodeURIComponent(appState.heroId)}&resume=${encodeURIComponent(resumeToken)}&ruleset=${RULESET}&protocol=${PROTOCOL_VERSION}`);
     appState.socket = socket;
     renderVitals();
     socket.addEventListener("message", handleSocketMessage);
@@ -1269,7 +1272,7 @@ function renderPartyStrip() {
 async function refreshRooms() {
   if (appState.screen !== "home") return;
   try {
-    const data = await api("/api/rooms");
+    const data = await api(protocolPath("/api/rooms"));
     ui.roomDrawer.replaceChildren();
     for (const room of data.rooms ?? []) {
       const card = document.createElement("button");

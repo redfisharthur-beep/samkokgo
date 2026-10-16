@@ -5,6 +5,8 @@ on:
     branches: [godot4-integration]
     paths:
       - "godot/**"
+      - "shared/**"
+      - "tests/**"
       - "worker.js"
       - "public/main.js"
       - ".github/workflows/godot-check.yml"
@@ -12,6 +14,8 @@ on:
     branches: [main]
     paths:
       - "godot/**"
+      - "shared/**"
+      - "tests/**"
       - "worker.js"
       - "public/main.js"
       - ".github/workflows/godot-check.yml"
@@ -26,6 +30,9 @@ jobs:
 
       - name: Check Worker and browser JavaScript
         run: node --check worker.js && node --check public/main.js
+
+      - name: Verify shared room protocol
+        run: node --test tests/protocol.test.mjs
 
       - name: Install Godot 4.3 headless
         shell: bash
