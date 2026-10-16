@@ -172,6 +172,19 @@ export class GameHub extends DurableObject {
       this.broadcast(room.id, { type: "players", players: this.playerList(room.id, room) });
       return;
     }
+    if (message.type === "player-pickup" && room.status === "playing") {
+      const now = Date.now();
+      const pickupId = String(message.pickupId ?? "").slice(0, 32);
+      if (now - (attachment.lastPickupAt ?? 0) < 120 || !/^p-[0-9]{1,8}$/.test(pickupId)) return;
+      attachment.lastPickupAt = now;
+      socket.serializeAttachment(attachment);
+      this.broadcast(room.id, {
+        type: "player-pickup",
+        playerId: attachment.playerId,
+        pickupId
+      }, socket);
+      return;
+    }
     if (message.type === "player-attack" && room.status === "playing") {
       const now = Date.now();
       const lastAttackAt = attachment.lastAttackAt ?? 0;
@@ -228,7 +241,7 @@ export class GameHub extends DurableObject {
       });
       return;
     }
-    if (message.type === "level-choice" && room.status === "playing") {
+    if (message.type === "level-choice" && attachment.playerId === room.hostId && room.status === "playing") {
       const upgradeId = ["power", "tempo", "reach", "speed"].includes(message.upgradeId) ? message.upgradeId : null;
       if (upgradeId) this.broadcast(room.id, { type: "level-choice", playerId: attachment.playerId, upgradeId });
       return;
