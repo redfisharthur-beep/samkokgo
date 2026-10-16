@@ -40,6 +40,11 @@ var remote_players: Array[Dictionary] = []
 var boss_spawned := false
 var boss_hp := 0.0
 var attack_flash := 0.0
+var is_host := false
+var room_connected := false
+var sync_clock := 0.0
+var _sync_clock := 0.0
+var next_enemy_id := 1
 
 func _ready() -> void:
 	player_pos = get_viewport_rect().size * 0.5
@@ -56,7 +61,14 @@ func _process(delta: float) -> void:
 		queue_redraw()
 		return
 
-	elapsed += delta
+	var authority := not room_connected or is_host
+	elapsed += delta if authority else 0.0
+	if room_connected:
+		sync_clock += delta
+		if sync_clock >= 0.10:
+			sync_clock = 0.0
+			var world_pos := _screen_to_world(player_pos)
+			network.send_input(move_vector.x, move_vector.y, world_pos.x, world_pos.y)
 	attack_flash = maxf(0.0, attack_flash - delta)
 	var direction := move_vector
 	if keys.length() > 0.1:
@@ -66,28 +78,35 @@ func _process(delta: float) -> void:
 	player_pos.x = clampf(player_pos.x, 50.0, bounds.x - 50.0)
 	player_pos.y = clampf(player_pos.y, 125.0, bounds.y - 50.0)
 
-	spawn_clock += delta
-	var spawn_rate := maxf(0.32, 1.2 - elapsed * 0.0014)
-	if spawn_clock >= spawn_rate and elapsed < 300.0:
-		spawn_clock = 0.0
-		_spawn_enemy(false)
-		if randf() < minf(0.35, elapsed / 240.0):
-			_spawn_enemy(true)
+	if authority:
+		spawn_clock += delta
+		var spawn_rate := maxf(0.32, 1.2 - elapsed * 0.0014)
+		if spawn_clock >= spawn_rate and elapsed < 300.0:
+			spawn_clock = 0.0
+			_spawn_enemy(false)
+			if randf() < minf(0.35, elapsed / 240.0):
+				_spawn_enemy(true)
 
-	if elapsed >= 300.0 and not boss_spawned:
-		boss_spawned = true
-		boss_hp = 1600.0
-		_spawn_enemy(false, true)
+		if elapsed >= 300.0 and not boss_spawned:
+			boss_spawned = true
+			boss_hp = 1600.0
+			_spawn_enemy(false, true)
 
 	attack_clock += delta
 	if attack_clock >= attack_interval:
 		attack_clock = 0.0
 		_auto_attack()
 
-	_update_combat(delta)
-	_update_enemies(delta)
+	if authority:
+		_update_combat(delta)
+		_update_enemies(delta)
+		_update_drops(delta)
+		if room_connected:
+			_sync_clock += delta
+			if _sync_clock >= 0.25:
+				_sync_clock = 0.0
+				_publish_game_state()
 	_update_projectiles(delta)
-	_update_drops(delta)
 	_update_particles(delta)
 
 	if hp <= 0.0:
@@ -158,9 +177,14 @@ func _handle_lobby_click(pos: Vector2) -> void:
 		network.create_room()
 		status_text = "正在建立房間…"
 	elif Rect2(center - Vector2(130, -148), Vector2(260, 68)).has_point(pos):
-		_start_battle()
+		if room_connected and not is_host:
+			status_text = "等候房主開始"
+		else:
+			if room_connected:
+				network.send_action({"type": "start"})
+			_start_battle(false)
 
-func _start_battle() -> void:
+func _start_battle(_send_room_start: bool = false) -> void:
 	mode = "battle"
 	elapsed = 0.0
 	spawn_clock = 0.0
@@ -183,8 +207,10 @@ func _start_battle() -> void:
 	particles.clear()
 	player_pos = get_viewport_rect().size * 0.5
 	move_vector = Vector2.ZERO
-	if not room_id.is_empty():
-		network.send_action({"type": "start"})
+	if not room_connected or is_host:
+		_spawn_enemy(false)
+		if room_connected:
+			network.send_game_state({"enemies": [], "pickups": [], "elapsed": 0})
 	queue_redraw()
 
 func _spawn_enemy(ranged: bool, boss: bool = false) -> void:
@@ -198,6 +224,7 @@ func _spawn_enemy(ranged: bool, boss: bool = false) -> void:
 		_: p = Vector2(20.0, randf_range(112.0, size.y - 20.0))
 	var scale := 1.0 if not boss else 2.15
 	enemies.append({
+		"id": "e-%d" % next_enemy_id,
 		"pos": p,
 		"hp": 42.0 if not boss else boss_hp,
 		"max_hp": 42.0 if not boss else boss_hp,
@@ -208,6 +235,7 @@ func _spawn_enemy(ranged: bool, boss: bool = false) -> void:
 		"shot_clock": randf_range(1.0, 2.5),
 		"phase": randf() * TAU
 	})
+	next_enemy_id += 1
 
 func _auto_attack() -> void:
 	var nearest := -1
@@ -222,6 +250,8 @@ func _auto_attack() -> void:
 	var target: Vector2 = enemies[nearest]["pos"]
 	var direction := (target - player_pos).normalized()
 	shots.append({"pos": player_pos + direction * 24.0, "vel": direction * 620.0, "damage": damage, "life": 1.1})
+	if room_connected and not is_host:
+		network.send_action({"type": "player-attack", "targetId": enemies[nearest]["id"], "damage": damage})
 	attack_flash = 0.15
 	_emit_particles(player_pos + direction * 24.0, GOLD, 5, 85.0)
 
@@ -268,9 +298,10 @@ func _update_projectiles(delta: float) -> void:
 			var enemy: Dictionary = enemies[j]
 			var hit_radius := 23.0 * float(enemy["scale"])
 			if Vector2(shot["pos"]).distance_to(Vector2(enemy["pos"])) < hit_radius:
-				enemy["hp"] = float(enemy["hp"]) - float(shot["damage"])
+				if not room_connected or is_host:
+					enemy["hp"] = float(enemy["hp"]) - float(shot["damage"])
 				_emit_particles(Vector2(shot["pos"]), GOLD, 8, 140.0)
-				if float(enemy["hp"]) <= 0.0:
+				if (not room_connected or is_host) and float(enemy["hp"]) <= 0.0:
 					if enemy["boss"]:
 						boss_hp = 0.0
 						for n in range(12):
@@ -280,7 +311,7 @@ func _update_projectiles(delta: float) -> void:
 					kills += 1
 					_emit_particles(Vector2(enemy["pos"]), RUST, 14, 190.0)
 					enemies.remove_at(j)
-				else:
+				elif not room_connected or is_host:
 					enemies[j] = enemy
 				hit = true
 				break
@@ -390,21 +421,142 @@ func _on_api_result(endpoint: String, payload: Dictionary) -> void:
 	queue_redraw()
 
 func _on_room_event(event: Dictionary) -> void:
-	if event.get("type") == "presence":
+	var kind := str(event.get("type", ""))
+	if kind == "welcome":
+		var welcome_snapshot: Dictionary = event.get("snapshot", {})
+		_update_room_players(welcome_snapshot.get("players", []))
+		var welcome_state: Variant = event.get("gameState")
+		if welcome_state is Dictionary and not welcome_state.is_empty():
+			_start_battle(false)
+			_apply_game_state(welcome_state)
+	elif kind == "presence":
 		var snapshot: Dictionary = event.get("snapshot", {})
-		remote_players = snapshot.get("players", [])
-		status_text = "房間已連線 · %d 位隊友" % remote_players.size()
-	elif event.get("type") == "start":
+		_update_room_players(snapshot.get("players", []))
+	elif kind == "players":
+		_update_room_players(event.get("players", []))
+	elif kind == "start":
+		if mode == "lobby":
+			_start_battle(false)
 		status_text = "隊伍已開始"
-	elif event.get("type") == "game-state":
-		pass
+	elif kind == "game-state":
+		if room_connected and not is_host:
+			_apply_game_state(event.get("state", {}))
+	elif kind == "player-attack":
+		if is_host:
+			_apply_remote_attack(event)
+	queue_redraw()
+
+func _update_room_players(players: Array) -> void:
+	remote_players.clear()
+	is_host = false
+	for value in players:
+		if not value is Dictionary:
+			continue
+		var player: Dictionary = value
+		if str(player.get("id", "")) == network.self_id:
+			is_host = bool(player.get("host", false))
+		else:
+			remote_players.append(player)
+	status_text = "房間已連線 · %d 位隊友" % remote_players.size()
+
+func _apply_remote_attack(event: Dictionary) -> void:
+	var target_id := str(event.get("targetId", ""))
+	for i in range(enemies.size()):
+		if str(enemies[i].get("id", "")) == target_id:
+			var enemy: Dictionary = enemies[i]
+			enemy["hp"] = float(enemy["hp"]) - clampf(float(event.get("damage", 1.0)), 1.0, 60.0)
+			_emit_particles(enemy["pos"], GOLD, 7, 110.0)
+			if float(enemy["hp"]) <= 0.0:
+				boss_hp = 0.0 if enemy["boss"] else boss_hp
+				drops.append({"pos": enemy["pos"], "value": 1})
+				enemies.remove_at(i)
+				kills += 1
+			else:
+				enemies[i] = enemy
+			break
+
+func _publish_game_state() -> void:
+	var state_enemies: Array[Dictionary] = []
+	var state_pickups: Array[Dictionary] = []
+	for enemy in enemies:
+		var world := _screen_to_world(enemy["pos"])
+		state_enemies.append({
+			"id": str(enemy.get("id", "")),
+			"x": world.x,
+			"z": world.y,
+			"hp": 99 if enemy["boss"] else int(enemy["hp"]),
+			"elite": enemy["boss"],
+			"kind": "boss" if enemy["boss"] else ("archer" if enemy["ranged"] else "grunt")
+		})
+	for i in range(mini(drops.size(), 20)):
+		var world := _screen_to_world(drops[i]["pos"])
+		state_pickups.append({"id": "p-%d" % i, "x": world.x, "z": world.y, "type": "energy"})
+	var boss_state: Variant = null
+	if boss_spawned and boss_hp > 0.0:
+		boss_state = {"hp": boss_hp, "maxHp": 1600, "bossIndex": 0}
+	network.send_game_state({
+		"enemies": state_enemies,
+		"pickups": state_pickups,
+		"boss": boss_state,
+		"elapsed": elapsed,
+		"xp": xp,
+		"level": level,
+		"energy": 0
+	})
+
+func _apply_game_state(state: Dictionary) -> void:
+	if state.is_empty():
+		return
+	elapsed = float(state.get("elapsed", elapsed))
+	boss_spawned = state.get("boss") is Dictionary and not state.get("boss").is_empty()
+	if boss_spawned:
+		boss_hp = float(state["boss"].get("hp", 0.0))
+	enemies.clear()
+	for value in state.get("enemies", []):
+		if not value is Dictionary:
+			continue
+		var enemy: Dictionary = value
+		var is_boss: bool = str(enemy.get("kind", "")) == "boss"
+		var hp_value := boss_hp if is_boss else float(enemy.get("hp", 42.0))
+		enemies.append({
+			"id": str(enemy.get("id", "")),
+			"pos": _world_to_screen(Vector2(float(enemy.get("x", 0.0)), float(enemy.get("z", 0.0)))),
+			"hp": hp_value,
+			"max_hp": 1600.0 if is_boss else 42.0,
+			"speed": 0.0,
+			"ranged": str(enemy.get("kind", "")) == "archer",
+			"boss": is_boss,
+			"scale": 2.15 if is_boss else 1.0,
+			"shot_clock": 9.0,
+			"phase": 0.0
+		})
+	drops.clear()
+	for value in state.get("pickups", []):
+		if not value is Dictionary:
+			continue
+		drops.append({
+			"pos": _world_to_screen(Vector2(float(value.get("x", 0.0)), float(value.get("z", 0.0)))),
+			"value": 1
+		})
+	xp = int(state.get("xp", xp))
+	level = int(state.get("level", level))
+
+func _screen_to_world(pos: Vector2) -> Vector2:
+	var size := get_viewport_rect().size
+	return Vector2(pos.x / maxf(size.x, 1.0) * 96.0 - 48.0, pos.y / maxf(size.y, 1.0) * 54.0 - 27.0)
+
+func _world_to_screen(pos: Vector2) -> Vector2:
+	var size := get_viewport_rect().size
+	return Vector2((pos.x + 48.0) / 96.0 * size.x, (pos.y + 27.0) / 54.0 * size.y)
 
 func _on_connection_changed(state: String) -> void:
 	if state == "connecting":
 		status_text = "正在連線到房間…"
 	elif state == "connected":
+		room_connected = true
 		status_text = "房間已連線 · 可開始戰鬥"
 	elif state.begins_with("error:"):
+		room_connected = false
 		status_text = "連線失敗 · 可先單人試玩"
 	queue_redraw()
 
@@ -448,7 +600,9 @@ func _draw_battle(size: Vector2) -> void:
 	for particle in particles:
 		draw_circle(particle["pos"], 2.3, particle["color"])
 	for player in remote_players:
-		_draw_hero(player_pos + Vector2(48, 12), 0.72, Color("#8c9e9b"), Color("#494c4a"), Color("#bd9e68"), 0.0)
+		var remote_pos := _world_to_screen(Vector2(float(player.get("x", 0.0)), float(player.get("z", 0.0))))
+		var tint := Color.from_hsv(float(player.get("colorIndex", 0)) / 6.0, 0.28, 0.78)
+		_draw_hero(remote_pos, 0.82, tint, Color("#494c4a"), Color("#bd9e68"), 0.0)
 	_draw_hero(player_pos, 1.0 + minf(0.16, level * 0.008), Color("#708b78"), Color("#353b37"), Color("#c4a766"), 0.0)
 	_draw_hud(size)
 	if moving_touch >= 0:
