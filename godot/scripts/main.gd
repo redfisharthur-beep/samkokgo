@@ -39,6 +39,8 @@ var enemy_shots: Array[Dictionary] = []
 var drops: Array[Dictionary] = []
 var particles: Array[Dictionary] = []
 var remote_players: Array[Dictionary] = []
+var remote_player_positions: Dictionary = {}
+var enemy_visual_targets: Dictionary = {}
 var boss_spawned := false
 var boss_hp := 0.0
 var attack_flash := 0.0
@@ -68,6 +70,10 @@ func _process(delta: float) -> void:
 		return
 
 	var authority := not room_connected or is_host
+	if room_connected:
+		_interpolate_remote_players(delta)
+		if not is_host:
+			_interpolate_enemy_positions(delta)
 	elapsed += delta if authority else 0.0
 	if room_connected:
 		sync_clock += delta
@@ -287,11 +293,11 @@ func _update_combat(delta: float) -> void:
 		if not _local_is_down() and pos.distance_to(player_pos) < radius + 22.0:
 			_damage_player(_local_player_id(), damage_per_second * delta)
 		if room_connected:
-			for teammate in remote_players:
+					for teammate in remote_players:
 				var teammate_id := str(teammate.get("id", ""))
 				if _vital_is_out(teammate_id):
 					continue
-				var teammate_pos := _world_to_screen(Vector2(float(teammate.get("x", 0.0)), float(teammate.get("z", 0.0))))
+				var teammate_pos := _teammate_screen_position(teammate)
 				if pos.distance_to(teammate_pos) < radius + 22.0:
 					_damage_player(teammate_id, damage_per_second * delta)
 		if enemy["ranged"] and not enemy["boss"]:
@@ -388,7 +394,7 @@ func _nearest_active_player(from: Vector2) -> Dictionary:
 		var player_id := str(teammate.get("id", ""))
 		if _vital_is_out(player_id):
 			continue
-		var pos := _world_to_screen(Vector2(float(teammate.get("x", 0.0)), float(teammate.get("z", 0.0))))
+		var pos := _teammate_screen_position(teammate)
 		var distance := from.distance_to(pos)
 		if distance < best:
 			best = distance
@@ -400,7 +406,7 @@ func _player_screen_position(player_id: String) -> Vector2:
 		return player_pos
 	for teammate in remote_players:
 		if str(teammate.get("id", "")) == player_id:
-			return _world_to_screen(Vector2(float(teammate.get("x", 0.0)), float(teammate.get("z", 0.0))))
+			return _teammate_screen_position(teammate)
 	return Vector2(-10000, -10000)
 
 func _update_revives(delta: float) -> void:
@@ -423,7 +429,7 @@ func _update_revives(delta: float) -> void:
 				var rescuer_id := str(teammate.get("id", ""))
 				if rescuer_id == player_id or _vital_is_out(rescuer_id):
 					continue
-				var rescuer_pos := _world_to_screen(Vector2(float(teammate.get("x", 0.0)), float(teammate.get("z", 0.0))))
+				var rescuer_pos := _teammate_screen_position(teammate)
 				if rescuer_pos.distance_to(downed_pos) < 54.0:
 					being_revived = true
 					break
@@ -716,10 +722,39 @@ func _update_room_players(players: Array) -> void:
 		else:
 			remote_players.append(player)
 			connected_ids.append(player_id)
+			var target := Vector2(float(player.get("x", 0.0)), float(player.get("z", 0.0)))
+			if not remote_player_positions.has(player_id):
+				remote_player_positions[player_id] = target
+	for player_id in remote_player_positions.keys():
+		if not connected_ids.has(str(player_id)):
+			remote_player_positions.erase(player_id)
 	if mode == "battle":
 		for player_id in connected_ids:
 			_ensure_vital(player_id)
 	status_text = "房間已連線 · %d 位隊友" % remote_players.size()
+
+func _interpolate_remote_players(delta: float) -> void:
+	var blend := 1.0 - exp(-delta * 18.0)
+	for player in remote_players:
+		var player_id := str(player.get("id", ""))
+		var target := Vector2(float(player.get("x", 0.0)), float(player.get("z", 0.0)))
+		var current: Vector2 = remote_player_positions.get(player_id, target)
+		remote_player_positions[player_id] = current.lerp(target, blend)
+
+func _teammate_screen_position(player: Dictionary) -> Vector2:
+	var player_id := str(player.get("id", ""))
+	var raw := Vector2(float(player.get("x", 0.0)), float(player.get("z", 0.0)))
+	var smooth: Vector2 = remote_player_positions.get(player_id, raw)
+	return _world_to_screen(smooth)
+
+func _interpolate_enemy_positions(delta: float) -> void:
+	var blend := 1.0 - exp(-delta * 12.0)
+	for i in range(enemies.size()):
+		var enemy: Dictionary = enemies[i]
+		var enemy_id := str(enemy.get("id", ""))
+		var target: Vector2 = enemy_visual_targets.get(enemy_id, enemy.get("pos", Vector2.ZERO))
+		enemy["pos"] = Vector2(enemy.get("pos", Vector2.ZERO)).lerp(target, blend)
+		enemies[i] = enemy
 
 func _apply_remote_attack(event: Dictionary) -> void:
 	var target_id := str(event.get("targetId", ""))
@@ -779,16 +814,24 @@ func _apply_game_state(state: Dictionary) -> void:
 	boss_spawned = state.get("boss") is Dictionary and not state.get("boss").is_empty()
 	if boss_spawned:
 		boss_hp = float(state["boss"].get("hp", 0.0))
+	var previous_enemy_positions: Dictionary = {}
+	for old_enemy in enemies:
+		previous_enemy_positions[str(old_enemy.get("id", ""))] = old_enemy.get("pos", Vector2.ZERO)
 	enemies.clear()
+	var next_enemy_targets: Dictionary = {}
 	for value in state.get("enemies", []):
 		if not value is Dictionary:
 			continue
 		var enemy: Dictionary = value
+		var enemy_id := str(enemy.get("id", ""))
 		var is_boss: bool = str(enemy.get("kind", "")) == "boss"
+		var target_pos := _world_to_screen(Vector2(float(enemy.get("x", 0.0)), float(enemy.get("z", 0.0))))
+		var render_pos: Vector2 = previous_enemy_positions.get(enemy_id, target_pos)
+		next_enemy_targets[enemy_id] = target_pos
 		var hp_value := boss_hp if is_boss else float(enemy.get("hp", 42.0))
 		enemies.append({
-			"id": str(enemy.get("id", "")),
-			"pos": _world_to_screen(Vector2(float(enemy.get("x", 0.0)), float(enemy.get("z", 0.0)))),
+			"id": enemy_id,
+			"pos": render_pos,
 			"hp": hp_value,
 			"max_hp": 1600.0 if is_boss else 42.0,
 			"speed": 0.0,
@@ -798,6 +841,7 @@ func _apply_game_state(state: Dictionary) -> void:
 			"shot_clock": 9.0,
 			"phase": 0.0
 		})
+	enemy_visual_targets = next_enemy_targets
 	drops.clear()
 	for value in state.get("pickups", []):
 		if not value is Dictionary:
@@ -878,7 +922,7 @@ func _draw_battle(size: Vector2) -> void:
 		draw_circle(particle["pos"], 2.3, particle["color"])
 	for player in remote_players:
 		var player_id := str(player.get("id", ""))
-		var remote_pos := _world_to_screen(Vector2(float(player.get("x", 0.0)), float(player.get("z", 0.0))))
+		var remote_pos := _teammate_screen_position(player)
 		var tint := Color.from_hsv(float(player.get("colorIndex", 0)) / 6.0, 0.28, 0.78)
 		var vital: Dictionary = player_vitals.get(player_id, {})
 		var out := bool(vital.get("downed", false)) or bool(vital.get("eliminated", false))
