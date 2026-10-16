@@ -425,10 +425,12 @@ func _on_room_event(event: Dictionary) -> void:
 	if kind == "welcome":
 		var welcome_snapshot: Dictionary = event.get("snapshot", {})
 		_update_room_players(welcome_snapshot.get("players", []))
+		var room_data: Dictionary = welcome_snapshot.get("room", {})
 		var welcome_state: Variant = event.get("gameState")
-		if welcome_state is Dictionary and not welcome_state.is_empty():
+		if room_data.get("status", "waiting") == "playing":
 			_start_battle(false)
-			_apply_game_state(welcome_state)
+			if welcome_state is Dictionary and not welcome_state.is_empty():
+				_apply_game_state(welcome_state)
 	elif kind == "presence":
 		var snapshot: Dictionary = event.get("snapshot", {})
 		_update_room_players(snapshot.get("players", []))
