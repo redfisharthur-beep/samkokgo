@@ -226,6 +226,10 @@ func refresh(main, delta: float) -> void:
 		_last_health.erase(id)
 	queue_redraw()
 
+func _world_to_screen(world_pos: Vector2) -> Vector2:
+	var size := get_viewport_rect().size
+	return Vector2((world_pos.x + 48.0) / 96.0 * size.x, (world_pos.y + 27.0) / 54.0 * size.y)
+
 func _ensure_actor(id: String, kind: String) -> Node2D:
 	if actors.has(id):
 		var existing: Node2D = actors[id]
