@@ -54,6 +54,7 @@ var selected_hero_id := "liubei"
 var navigating_to_lobby := false
 var boss_max_hp := 1600.0
 var ability_ready_at := 0.0
+var dash_ready_at := 0.0
 var sync_clock := 0.0
 var _sync_clock := 0.0
 var next_enemy_id := 1
@@ -202,6 +203,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		var key := event as InputEventKey
 		if crossplay_mode and mode == "battle" and key.pressed and not key.echo and key.keycode == KEY_SPACE:
 			network.send_action({"type": "ability"})
+		if crossplay_mode and mode == "battle" and key.pressed and not key.echo and key.keycode == KEY_SHIFT:
+			_send_dash()
 		if key.keycode in [KEY_W, KEY_A, KEY_S, KEY_D, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]:
 			if key.pressed:
 				held_movement_keys[key.keycode] = true
@@ -212,6 +215,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		var touch := event as InputEventScreenTouch
 		if touch.pressed:
+			if crossplay_mode and mode == "battle" and _dash_button_rect().has_point(touch.position):
+				_send_dash()
+				return
 			if mode == "battle" and OS.has_feature("web") and _fullscreen_button_rect().has_point(touch.position):
 				_toggle_web_fullscreen()
 				return
@@ -242,6 +248,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		var mouse := event as InputEventMouseButton
 		if mouse.button_index == MOUSE_BUTTON_LEFT:
 			if mouse.pressed:
+				if crossplay_mode and mode == "battle" and _dash_button_rect().has_point(mouse.position):
+					_send_dash()
+					return
 				if mode == "battle" and OS.has_feature("web") and _fullscreen_button_rect().has_point(mouse.position):
 					_toggle_web_fullscreen()
 					return
@@ -265,6 +274,16 @@ func _unhandled_input(event: InputEvent) -> void:
 func _fullscreen_button_rect() -> Rect2:
 	var size := get_viewport_rect().size
 	return Rect2(Vector2(size.x - 168.0, 112.0), Vector2(154.0, 46.0))
+
+func _dash_button_rect() -> Rect2:
+	var size := get_viewport_rect().size
+	return Rect2(Vector2(size.x - 250.0, size.y - 139.0), Vector2(92.0, 82.0))
+
+func _send_dash() -> void:
+	if not crossplay_mode or dash_ready_at > Time.get_unix_time_from_system() * 1000.0:
+		return
+	var direction := keys.normalized() if keys.length() > 0.1 else move_vector.normalized()
+	network.send_action({"type": "dash", "x": direction.x, "z": direction.y})
 
 func _toggle_web_fullscreen() -> void:
 	if OS.has_feature("web"):
@@ -1033,6 +1052,8 @@ func _apply_game_state(state: Dictionary) -> void:
 	if crossplay_mode:
 		var cooldowns: Dictionary = state.get("cooldowns", {})
 		ability_ready_at = float(cooldowns.get(network.self_id, 0.0))
+		var dash_cooldowns: Dictionary = state.get("dashCooldowns", {})
+		dash_ready_at = float(dash_cooldowns.get(network.self_id, 0.0))
 	if crossplay_mode and state.get("result") is String:
 		_finish_battle_to_web(str(state.get("result")))
 	var state_vitals: Variant = state.get("playerVitals", {})

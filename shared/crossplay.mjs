@@ -26,7 +26,7 @@ export function makeBattle(now = Date.now()) {
   return { schema: "crossplay-v1", elapsed: 0, startedAt: now, nextEnemy: 1, nextPickup: 1, nextProjectile: 1,
     spawnClock: 0, boss: null, bossSpawned: false, finalBossDefeated: false,
     bossesSpawned: [], energy: 0, enemies: [], pickups: [], projectiles: [], playerProgress: {},
-    playerVitals: {}, cooldowns: {}, result: null, xp: 0, level: 1 };
+    playerVitals: {}, cooldowns: {}, dashCooldowns: {}, invulnerableUntil: {}, result: null, xp: 0, level: 1 };
 }
 export function syncPlayers(state, players) {
   for (const p of players) {
@@ -68,6 +68,47 @@ export function movePlayer(player, dx, dz, seconds) {
   player.x = bounded(player.x + dx / Math.max(1, mag) * speed * dt, -WORLD_X, WORLD_X);
   player.z = bounded(player.z + dz / Math.max(1, mag) * speed * dt, -WORLD_Z, WORLD_Z);
   return player;
+}
+
+export function useDash(state, player, players, dx = 0, dz = 0, now = Date.now()) {
+  if (!state || !player?.playerId || state.result) return false;
+  const playerId = player.playerId;
+  const vital = state.playerVitals?.[playerId];
+  if (!vital || vital.downed || vital.eliminated || (state.dashCooldowns?.[playerId] ?? 0) > now) return false;
+  state.dashCooldowns ??= {};
+  state.invulnerableUntil ??= {};
+  let x = bounded(dx, -1, 1);
+  let z = bounded(dz, -1, 1);
+  let magnitude = Math.hypot(x, z);
+  if (magnitude < 0.1) {
+    const nearest = state.enemies.reduce((best, enemy) => !best || distance(player, enemy) < distance(player, best) ? enemy : best, null);
+    if (nearest) { x = player.x - nearest.x; z = player.z - nearest.z; magnitude = Math.hypot(x, z); }
+  }
+  if (magnitude < 0.1) { x = 1; z = 0; magnitude = 1; }
+  x /= magnitude;
+  z /= magnitude;
+  const start = { x: player.x, z: player.z };
+  const dashLength = 6.5;
+  const end = { x: bounded(start.x + x * dashLength, -WORLD_X, WORLD_X), z: bounded(start.z + z * dashLength, -WORLD_Z, WORLD_Z) };
+  const actualX = end.x - start.x;
+  const actualZ = end.z - start.z;
+  const actualLength = Math.max(0.001, Math.hypot(actualX, actualZ));
+  player.x = end.x;
+  player.z = end.z;
+  state.dashCooldowns[playerId] = now + 4200;
+  state.invulnerableUntil[playerId] = now + 480;
+  const upgrades = state.playerProgress?.[playerId]?.upgrades ?? {};
+  const damage = 18 + bounded(player.gearAttack ?? 0, 0, 15) * 2 + bounded(upgrades.power ?? 0, 0, 5) * 4;
+  for (const enemy of [...state.enemies]) {
+    const along = ((enemy.x - start.x) * actualX + (enemy.z - start.z) * actualZ) / actualLength;
+    if (along < 0 || along > actualLength) continue;
+    const closestX = start.x + actualX * along / actualLength;
+    const closestZ = start.z + actualZ * along / actualLength;
+    if (Math.hypot(enemy.x - closestX, enemy.z - closestZ) > 1.6) continue;
+    enemy.hp -= damage;
+    if (enemy.hp <= 0) killEnemy(state, enemy);
+  }
+  return { from: start, to: end, cooldownUntil: state.dashCooldowns[playerId] };
 }
 function spawn(state, x, z, kind = "grunt", difficulty = "normal", players = 1) {
   if (kind === "boss" && state.enemies.length >= ENEMY_LIMIT) {
@@ -175,7 +216,8 @@ export function advanceBattle(state, players, dt, now = Date.now(), difficulty =
     } else {
       const vital = state.playerVitals[nearest.playerId];
       const defense = bounded(nearest.gearDefense ?? 0, 0, 15);
-      vital.hp = Math.max(0, vital.hp - (enemy.kind === "boss" ? 15 : 5) * (1 - defense * 0.025) * dt);
+        if ((state.invulnerableUntil?.[nearest.playerId] ?? 0) <= now)
+          vital.hp = Math.max(0, vital.hp - (enemy.kind === "boss" ? 15 : 5) * (1 - defense * 0.025) * dt);
       if (vital.hp <= 0 && !vital.downed) {
         vital.downed = true;
         vital.downedAt = now;
@@ -188,7 +230,8 @@ export function advanceBattle(state, players, dt, now = Date.now(), difficulty =
     if (projectile.delay <= 0) {
       projectile.x += projectile.vx * dt;
       projectile.z += projectile.vz * dt;
-      const target = alive.find(p => distance(p, projectile) < 1.15);
+      const target = alive.find(p => distance(p, projectile) < 1.15
+        && (state.invulnerableUntil?.[p.playerId] ?? 0) <= now);
       if (target) {
         const vital = state.playerVitals[target.playerId];
         if (!vital?.downed && !vital?.eliminated) {

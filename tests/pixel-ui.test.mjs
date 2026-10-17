@@ -80,7 +80,6 @@ test("lost mouse or window focus always stops browser movement", () => {
   assert.match(js, /window\.addEventListener\("blur", \(\) => clearMovementInput\(\)\)/);
   assert.match(js, /document\.addEventListener\("visibilitychange"/);
 });
-
 test("fullscreen can be toggled from the lobby and Godot battle HUD", () => {
   assert.match(html, /id="fullscreen" aria-label="全螢幕"/);
   assert.match(html, /id="fullscreenGame" aria-label="進入全螢幕"/);

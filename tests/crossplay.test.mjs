@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeBattle, movePlayer, advanceBattle, chooseUpgrade, useAbility, COOP_SECONDS, syncPlayers } from "../shared/crossplay.mjs";
+import { makeBattle, movePlayer, advanceBattle, chooseUpgrade, useAbility, useDash, COOP_SECONDS, syncPlayers } from "../shared/crossplay.mjs";
 const party = [{ playerId: "p1", heroId: "liubei", x: 0, z: 0 },
   { playerId: "p2", heroId: "sunquan", x: 1, z: 1 }];
 test("server initializes same authoritative health/XP for mixed renderers", () => {
@@ -84,4 +84,25 @@ test("treasure pickups add team XP and energy, while equipment stats affect batt
   assert.equal(s.pickups.length, 0);
   assert.equal(s.energy, 38);
   assert.equal(s.playerProgress.p1.xp, 4);
+});
+
+test("dash moves, damages enemies along its path, grants a brief dodge, and respects cooldown", () => {
+  const s = makeBattle(0);
+  const runner = { ...party[0], x: 0, z: 0, gearAttack: 2 };
+  syncPlayers(s, [runner]);
+  s.enemies = [{ id: "e-dash", x: 3, z: 0, hp: 100, kind: "grunt" }];
+  const dash = useDash(s, runner, [runner], 1, 0, 1000);
+  assert.equal(runner.x, 6.5);
+  assert.equal(dash.cooldownUntil, 5200);
+  assert.equal(s.enemies[0].hp, 78);
+  assert.equal(s.invulnerableUntil.p1, 1480);
+  assert.equal(useDash(s, runner, [runner], 1, 0, 2000), false);
+  assert.ok(useDash(s, runner, [runner], -1, 0, 5200));
+});
+
+test("server accepts dash actions only through the crossplay room handler", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../worker.js", import.meta.url), "utf8");
+  assert.match(src, /message\.type === "dash" && room\.status === "playing"/);
+  assert.match(src, /useDash\(room\.gameState, player, participants/);
 });

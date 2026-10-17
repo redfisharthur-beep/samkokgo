@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { PROTOCOL_VERSION, RULESETS, resolveRuleset, sameRuleset, durationForRuleset } from "./shared/protocol.mjs";
-import { makeBattle, syncPlayers, movePlayer, advanceBattle, chooseUpgrade, useAbility, HERO_STATS } from "./shared/crossplay.mjs";
+import { makeBattle, syncPlayers, movePlayer, advanceBattle, chooseUpgrade, useAbility, useDash, HERO_STATS } from "./shared/crossplay.mjs";
 
 const MAX_PLAYERS = 6;
 const WORLD_LIMIT = 48;
@@ -284,6 +284,22 @@ export class GameHub extends DurableObject {
       const participants = this.ctx.getWebSockets(tagFor(room.id)).map(s => s.deserializeAttachment()).filter(Boolean);
       if (useAbility(room.gameState, attachment.playerId, participants)) {
         this.broadcast(room.id, { type: "ability", playerId: attachment.playerId, x: attachment.x, z: attachment.z });
+        this.broadcast(room.id, { type: "game-state", state: room.gameState });
+        rooms[room.id] = room;
+        await this.ctx.storage.put("rooms", rooms);
+      }
+      return;
+    }
+    if (room.ruleset === "crossplay-v1" && message.type === "dash" && room.status === "playing") {
+      const participants = this.ctx.getWebSockets(tagFor(room.id)).map(s => s.deserializeAttachment()).filter(Boolean);
+      const player = participants.find(p => p.playerId === attachment.playerId);
+      const dash = player && useDash(room.gameState, player, participants,
+        clampNumber(message.x, -1, 1), clampNumber(message.z, -1, 1));
+      if (dash) {
+        attachment.x = player.x;
+        attachment.z = player.z;
+        socket.serializeAttachment(attachment);
+        this.broadcast(room.id, { type: "players", players: this.playerList(room.id, room) });
         this.broadcast(room.id, { type: "game-state", state: room.gameState });
         rooms[room.id] = room;
         await this.ctx.storage.put("rooms", rooms);

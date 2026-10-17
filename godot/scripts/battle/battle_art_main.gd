@@ -31,6 +31,12 @@ func _draw_battle(size: Vector2) -> void:
 		var fullscreen_rect := Rect2(Vector2(size.x - 168.0, 112.0), Vector2(154.0, 46.0))
 		_frame_panel(fullscreen_rect, Color("#3b5146"))
 		_pixel_text(fullscreen_rect.position + Vector2(0, 29), "切換全螢幕", 14, PIXEL_PAPER, HORIZONTAL_ALIGNMENT_CENTER, fullscreen_rect.size.x)
+	if crossplay_mode:
+		var dash_rect := Rect2(Vector2(size.x - 250.0, size.y - 139.0), Vector2(92.0, 82.0))
+		var dash_wait := maxf(0.0, dash_ready_at - Time.get_unix_time_from_system() * 1000.0) / 1000.0
+		_frame_panel(dash_rect, Color("#416d5e") if dash_wait <= 0.0 else Color("#514943"))
+		_pixel_text(dash_rect.position + Vector2(0, 34), "閃身", 20, PIXEL_PAPER, HORIZONTAL_ALIGNMENT_CENTER, dash_rect.size.x)
+		_pixel_text(dash_rect.position + Vector2(0, 58), "SHIFT" if dash_wait <= 0.0 else "%.1f 秒" % dash_wait, 12, PIXEL_GOLD, HORIZONTAL_ALIGNMENT_CENTER, dash_rect.size.x)
 	_draw_control_guide(size)
 	if OS.has_feature("web") and crossplay_mode:
 		_frame_panel(Rect2(Vector2(12, 100), Vector2(132, 48)), Color("#293932"))

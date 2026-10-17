@@ -24,6 +24,7 @@ var health_front: Polygon2D
 var last_world_pos := Vector2.ZERO
 var attack_seconds := 0.0
 var hit_tween: Tween
+var dash_tween: Tween
 var downed := false
 var _initialized := false
 
@@ -93,6 +94,8 @@ func _texture_for(id: String) -> Texture2D:
 		_: return SHEET_GRUNT
 
 func set_visual_position(next: Vector2, delta: float, snap: bool = false) -> void:
+	if _initialized and not snap and position.distance_to(next) > 55.0:
+		play_dash(next - position)
 	if not _initialized or snap:
 		position = next
 		last_world_pos = next
@@ -134,6 +137,19 @@ func play_hit() -> void:
 	hit_tween.parallel().tween_property(animated, "modulate", Color("#ffb37d"), 0.025)
 	hit_tween.tween_property(animated, "scale", Vector2.ONE, 0.11)
 	hit_tween.parallel().tween_property(animated, "modulate", Color.WHITE, 0.11)
+
+func play_dash(direction: Vector2) -> void:
+	if animated == null:
+		return
+	if dash_tween and dash_tween.is_running():
+		dash_tween.kill()
+	animated.modulate = Color("#b8ead5")
+	animated.rotation = -0.24 if direction.x < 0.0 else (0.24 if direction.x > 0.0 else 0.0)
+	animated.scale = Vector2(0.78, 1.18)
+	dash_tween = create_tween()
+	dash_tween.tween_property(animated, "scale", Vector2.ONE, 0.15)
+	dash_tween.parallel().tween_property(animated, "rotation", 0.0, 0.15)
+	dash_tween.parallel().tween_property(animated, "modulate", Color.WHITE, 0.19)
 
 func set_health(hp: float, max_hp: float, show_bar: bool = true) -> void:
 	health_back.visible = show_bar
