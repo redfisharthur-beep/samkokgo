@@ -10,7 +10,7 @@ const godot = read("godot/scripts/battle/battle_art_main.gd");
 const project = read("godot/project.godot");
 
 test("new RPG homepage ships actual pixel assets and portrait panels", () => {
-  assert.match(html, /href="\/pixel-ui\.css\?v=home-ui-20261017b"/);
+  assert.match(html, /href="\/pixel-ui\.css\?v=pixel-fullscreen-20261017c"/);
   assert.match(html, /SamkokGo/);
   for (const hero of ["liubei","caocao","sunquan","lvbu"]) {
     assert.match(html, new RegExp('data-hero="' + hero + '"'));
@@ -80,15 +80,16 @@ test("lost mouse or window focus always stops browser movement", () => {
   assert.match(js, /window\.addEventListener\("blur", \(\) => clearMovementInput\(\)\)/);
   assert.match(js, /document\.addEventListener\("visibilitychange"/);
 });
-test("fullscreen can be toggled from the lobby and Godot battle HUD", () => {
-  assert.match(html, /id="fullscreen" aria-label="全螢幕"/);
-  assert.match(html, /id="fullscreenGame" aria-label="進入全螢幕"/);
+test("fullscreen is requested at launch and retried on the first trusted input", () => {
+  assert.doesNotMatch(html, /id="fullscreen(Game)?"/);
   assert.ok(css.includes(".home-screen .home-controls { display:flex !important;"));
-  assert.match(js, /async function toggleFullscreen\(\)/);
-  assert.match(js, /document\.exitFullscreen\(\)/);
-  assert.match(js, /document\.addEventListener\("fullscreenchange", syncFullscreenButtons\)/);
-  assert.match(godot, /切換全螢幕/);
+  assert.match(js, /function requestGameFullscreen\(\)/);
+  assert.match(js, /requestFullscreen\(\{ navigationUI: "hide" \}\)/);
+  assert.match(js, /document\.addEventListener\("pointerdown", requestGameFullscreen, true\)/);
+  assert.match(js, /requestGameFullscreen\(\);/);
+  assert.doesNotMatch(godot, /切換全螢幕/);
   const main = read("godot/scripts/main.gd");
-  assert.match(main, /func _toggle_web_fullscreen\(\)/);
-  assert.match(main, /document\.documentElement\.requestFullscreen/);
+  assert.doesNotMatch(main, /func _toggle_web_fullscreen\(\)/);
+  assert.match(main, /document\.exitFullscreen\(\)/);
+  assert.match(js, /setPixelRatio\(Math\.min\(window\.devicePixelRatio \|\| 1, 2\.5\)\)/);
 });

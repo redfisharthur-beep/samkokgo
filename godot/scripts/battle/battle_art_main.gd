@@ -27,10 +27,6 @@ func _draw_battle(size: Vector2) -> void:
 	# All ground, props, players, enemies and hit sparks are drawn by real
 	# TileMapLayer / Sprite2D / AnimatedSprite2D children behind the HUD.
 	_draw_hud(size)
-	if OS.has_feature("web"):
-		var fullscreen_rect := Rect2(Vector2(size.x - 168.0, 112.0), Vector2(154.0, 46.0))
-		_frame_panel(fullscreen_rect, Color("#3b5146"))
-		_pixel_text(fullscreen_rect.position + Vector2(0, 29), "切換全螢幕", 14, PIXEL_PAPER, HORIZONTAL_ALIGNMENT_CENTER, fullscreen_rect.size.x)
 	if crossplay_mode:
 		var dash_rect := Rect2(Vector2(size.x - 250.0, size.y - 139.0), Vector2(92.0, 82.0))
 		var dash_wait := maxf(0.0, dash_ready_at - Time.get_unix_time_from_system() * 1000.0) / 1000.0

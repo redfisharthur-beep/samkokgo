@@ -218,9 +218,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			if crossplay_mode and mode == "battle" and _dash_button_rect().has_point(touch.position):
 				_send_dash()
 				return
-			if mode == "battle" and OS.has_feature("web") and _fullscreen_button_rect().has_point(touch.position):
-				_toggle_web_fullscreen()
-				return
 			if crossplay_mode and mode == "battle" and touch.position.distance_to(Vector2(get_viewport_rect().size.x - 90.0, get_viewport_rect().size.y - 90.0)) < 48.0:
 				if ability_ready_at <= Time.get_unix_time_from_system() * 1000.0:
 					network.send_action({"type": "ability"})
@@ -251,9 +248,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				if crossplay_mode and mode == "battle" and _dash_button_rect().has_point(mouse.position):
 					_send_dash()
 					return
-				if mode == "battle" and OS.has_feature("web") and _fullscreen_button_rect().has_point(mouse.position):
-					_toggle_web_fullscreen()
-					return
 				if crossplay_mode and mode == "battle" and mouse.position.distance_to(Vector2(get_viewport_rect().size.x - 90.0, get_viewport_rect().size.y - 90.0)) < 48.0:
 					if ability_ready_at <= Time.get_unix_time_from_system() * 1000.0:
 						network.send_action({"type": "ability"})
@@ -271,10 +265,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and moving_mouse and mode == "battle":
 		_update_stick((event as InputEventMouseMotion).position)
 
-func _fullscreen_button_rect() -> Rect2:
-	var size := get_viewport_rect().size
-	return Rect2(Vector2(size.x - 168.0, 112.0), Vector2(154.0, 46.0))
-
 func _dash_button_rect() -> Rect2:
 	var size := get_viewport_rect().size
 	return Rect2(Vector2(size.x - 250.0, size.y - 139.0), Vector2(92.0, 82.0))
@@ -284,13 +274,6 @@ func _send_dash() -> void:
 		return
 	var direction := keys.normalized() if keys.length() > 0.1 else move_vector.normalized()
 	network.send_action({"type": "dash", "x": direction.x, "z": direction.y})
-
-func _toggle_web_fullscreen() -> void:
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("if (document.fullscreenElement) { document.exitFullscreen(); } else if (document.documentElement.requestFullscreen) { document.documentElement.requestFullscreen().catch(() => {}); }")
-	else:
-		var mode_value := DisplayServer.WINDOW_MODE_WINDOWED if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else DisplayServer.WINDOW_MODE_FULLSCREEN
-		DisplayServer.window_set_mode(mode_value)
 
 func _refresh_keyboard_direction() -> void:
 	var up := held_movement_keys.has(KEY_W) or held_movement_keys.has(KEY_UP)

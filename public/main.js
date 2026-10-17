@@ -129,7 +129,7 @@ let audioEnabled = localStorage.getItem("samkokgo-sound") === "on";
 let renderer;
 try {
   renderer = new THREE.WebGLRenderer({ canvas: $("world"), antialias: true, alpha: false, powerPreference: "low-power" });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -1640,32 +1640,18 @@ function showToast(message) {
   appState.toastTimer = setTimeout(() => ui.toast.classList.remove("show"), 1800);
 }
 
-async function toggleFullscreen() {
+function requestGameFullscreen() {
+  const page = document.documentElement;
+  if (document.fullscreenElement || !page.requestFullscreen) return;
   try {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
-      return;
-    }
-    if (!document.documentElement.requestFullscreen) {
-      showToast("此瀏覽器不支援全螢幕");
-      return;
-    }
-    await document.documentElement.requestFullscreen();
-  } catch (error) {
-    console.warn("Fullscreen request failed", error);
-    showToast("無法切換全螢幕，請使用瀏覽器選單");
-  }
-}
-
-function syncFullscreenButtons() {
-  const fullscreen = Boolean(document.fullscreenElement);
-  for (const button of [$("fullscreen"), $("fullscreenGame")]) {
-    if (!button) continue;
-    const label = fullscreen ? "退出全螢幕" : "進入全螢幕";
-    button.setAttribute("aria-label", label);
-    button.title = label;
-    button.setAttribute("aria-pressed", String(fullscreen));
-  }
+    // Browsers reject an unsolicited page-load request. Calling this again
+    // from the first real tap/click enters fullscreen without a separate toggle.
+    Promise.resolve(page.requestFullscreen({ navigationUI: "hide" })).then(() => {
+      document.removeEventListener("pointerdown", requestGameFullscreen, true);
+      document.removeEventListener("keydown", requestGameFullscreen, true);
+      screen.orientation?.lock?.("landscape").catch(() => {});
+    }).catch(() => {});
+  } catch { /* The next trusted input retries while preserving the game screen. */ }
 }
 
 function colorCss(hex) { return `#${hex.toString(16).padStart(6, "0")}`; }
@@ -2223,9 +2209,6 @@ function installControls() {
     }
     catch { showToast("請使用瀏覽器分享功能邀請"); }
   });
-  for (const button of [$("fullscreen"), $("fullscreenGame")]) {
-    button?.addEventListener("click", toggleFullscreen);
-  }
   $("playAgain").addEventListener("click", quickJoin);
   $("toHome").addEventListener("click", returnHome);
 }
@@ -2236,9 +2219,12 @@ function sendRoomAction(type, extra = {}) {
 }
 
 window.addEventListener("resize", onResize);
-document.addEventListener("fullscreenchange", syncFullscreenButtons);
-document.addEventListener("fullscreenerror", () => showToast("無法切換全螢幕，請使用瀏覽器選單"));
-syncFullscreenButtons();
+document.addEventListener("fullscreenchange", () => {
+  document.documentElement.classList.toggle("is-fullscreen", Boolean(document.fullscreenElement));
+});
+document.addEventListener("pointerdown", requestGameFullscreen, true);
+document.addEventListener("keydown", requestGameFullscreen, true);
+requestGameFullscreen();
 installControls();
 initializeGeneralArt();
 ui.specialAbility.replaceChildren(pixelIcon("special", "special-pixel-icon"));

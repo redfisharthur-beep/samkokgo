@@ -87,7 +87,6 @@ button { font: inherit; color: inherit; }
 .party-dot.down { opacity: .3; box-shadow: 0 0 0 2px rgba(183,123,109,.25); }
 .camera-toggle { pointer-events: auto; }
 .game-sound { position: absolute; top: max(17px, env(safe-area-inset-top)); right: max(18px, env(safe-area-inset-right)); pointer-events: auto; }
-.game-fullscreen { position: absolute; top: max(17px, env(safe-area-inset-top)); right: max(70px, calc(env(safe-area-inset-right) + 70px)); pointer-events: auto; }
 .game-lock { position: absolute; top: max(68px, calc(env(safe-area-inset-top) + 64px)); right: max(18px, env(safe-area-inset-right)); pointer-events: auto; }
 .team-health { position: absolute; top: max(68px, calc(env(safe-area-inset-top) + 64px)); left: 50%; display: flex; align-items: center; gap: 8px; width: min(210px, 36vw); height: 12px; transform: translateX(-50%); }
 .heart-mark { color: var(--clay); font-size: 12px; line-height: 1; text-shadow: 0 1px 2px rgba(60,50,40,.16); }
