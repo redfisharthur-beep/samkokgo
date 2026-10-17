@@ -16,10 +16,10 @@ test("movement rejects client teleport by using only direction and bounded elaps
   assert.ok(p.x <= 2.7);
   assert.equal(p.z, 0);
 });
-test("boss appears at 5 minutes, end result is server-controlled", () => {
+test("boss appears at 2 minutes, end result is server-controlled", () => {
   const s = makeBattle(0);
-  s.elapsed = 299.5;
-  advanceBattle(s, party, 1, 300000);
+  s.elapsed = 119.5;
+  advanceBattle(s, party, 1, 120000);
   assert.equal(s.bossSpawned, true);
   assert.equal(s.bossesSpawned[0], 0);
   s.elapsed = COOP_SECONDS - 0.5;
@@ -52,8 +52,8 @@ test("boss spawn remains guaranteed even when enemy slots are full", () => {
   s.enemies = Array.from({ length: 30 }, (_, i) => ({
     id: "e-" + i, x: 0, z: 0, hp: 20, kind: "grunt", bossIndex: -1
   }));
-  s.elapsed = 299.9;
-  advanceBattle(s, party, 1, 300000);
+  s.elapsed = 119.9;
+  advanceBattle(s, party, 1, 120000);
   assert.equal(s.bossSpawned, true);
   assert.ok(s.enemies.some(e => e.kind === "boss"));
   assert.equal(s.enemies.length, 30);
