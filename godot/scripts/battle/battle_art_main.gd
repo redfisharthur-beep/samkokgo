@@ -94,6 +94,11 @@ func _draw_hud(size: Vector2) -> void:
 		_frame_panel(Rect2(Vector2(bx, top_height + 8), Vector2(bw, 53)), Color("#452c32"))
 		_pixel_text(Vector2(bx + 12, top_height + 29), "首領 · 董卓", 17, cream)
 		_pixel_bar(Rect2(Vector2(bx + 12, top_height + 36), Vector2(bw - 24, 9)), boss_hp / maxf(1.0, boss_max_hp), blood)
+		_pixel_text(Vector2(0, top_height + 82), "董卓來襲 · 看準預警圈閃避，再找空檔反擊", 14 if not compact else 12, cream, HORIZONTAL_ALIGNMENT_CENTER, size.x)
+	else:
+		var boss_eta: int = maxi(0, 120 - int(elapsed))
+		var objective: String = "董卓已退 · 收集掉落寶物" if boss_spawned else "首領董卓將於 %02d:%02d 後出陣 · 擊破敵軍收集強化" % [boss_eta / 60, boss_eta % 60]
+		_pixel_text(Vector2(0, top_height + 34), objective, 14 if not compact else 11, cream, HORIZONTAL_ALIGNMENT_CENTER, size.x)
 	# Actual hitbox is handled by main.gd: same bottom-right anchor.
 	if crossplay_mode:
 		var ability_center := Vector2(size.x - 90.0, size.y - 90.0)
