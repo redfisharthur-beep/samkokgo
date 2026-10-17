@@ -84,7 +84,7 @@ test("lost mouse or window focus always stops browser movement", () => {
 test("fullscreen can be toggled from the lobby and Godot battle HUD", () => {
   assert.match(html, /id="fullscreen" aria-label="全螢幕"/);
   assert.match(html, /id="fullscreenGame" aria-label="進入全螢幕"/);
-  assert.match(css, /\.home-screen \.home-controls \{[\\s\\S]*display:flex !important/);
+  assert.ok(css.includes(".home-screen .home-controls { display:flex !important;"));
   assert.match(js, /async function toggleFullscreen\(\)/);
   assert.match(js, /document\.exitFullscreen\(\)/);
   assert.match(js, /document\.addEventListener\("fullscreenchange", syncFullscreenButtons\)/);
