@@ -688,18 +688,18 @@ html,body,#app { background: #102e46; color: #f8ebca; }
 
 /* The lobby background is scenery only; keep all title and launch controls live UI. */
 .home-screen .brand-title {
-  display:flex !important; top:4.5%; width:min(82%, 760px); z-index:6;
+  display:flex !important; top:10%; width:min(82%, 760px); z-index:6;
 }
 .home-screen .brand-title strong { font-size:clamp(34px, 6.6vh, 66px); margin-top:3px; }
 .home-screen .brand-title b { font-size:clamp(20px, 3.3vh, 34px); }
 .home-screen .brand-kicker, .home-screen .brand-ribbon { display:inline-block; }
-.home-screen .hero-open {
+.home-screen #pickHero {
   display:flex !important; z-index:9; top:5%; left:auto; right:3%;
   width:auto; height:auto; min-width:0; min-height:0; padding:10px 16px;
   border:2px solid #efcc7b; color:#fff1d3; text-indent:0; font-size:clamp(12px, 1.25vw, 17px);
   background:linear-gradient(180deg,#503629,#2b2521); box-shadow:0 4px 0 #211713;
 }
-.home-screen .hero-open > * { opacity:1 !important; }
+.home-screen #pickHero > * { opacity:1 !important; }
 .home-screen .home-actions {
   display:flex !important; position:absolute; z-index:9; left:50%; top:auto; right:auto;
   bottom:4%; width:auto; transform:translateX(-50%); gap:clamp(8px, 1.2vw, 18px);
@@ -720,9 +720,9 @@ html,body,#app { background: #102e46; color: #f8ebca; }
 .home-screen .home-actions > button > * { opacity:1 !important; }
 .home-screen .home-actions > button svg { width:clamp(20px, 2.2vw, 30px); height:clamp(20px, 2.2vw, 30px); flex:none; }
 @media (max-width: 640px) {
-  .home-screen .brand-title { top:3%; width:70%; }
+  .home-screen .brand-title { top:8%; width:70%; }
   .home-screen .brand-title strong { font-size:clamp(27px, 5vh, 44px); }
-  .home-screen .hero-open { top:4%; right:2%; padding:7px 9px; }
+  .home-screen #pickHero { top:4%; right:2%; padding:7px 9px; }
   .home-screen .home-actions { bottom:3%; gap:5px; }
   .home-screen .home-actions > button { min-width:0; height:42px; padding:0 8px; font-size:11px; }
   .home-screen .home-actions > button svg { width:17px; height:17px; }
