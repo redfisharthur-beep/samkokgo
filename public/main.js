@@ -1225,6 +1225,13 @@ function connectRoomSocket(roomId) {
 
 function transferToGodot() {
   if (RULESET !== "crossplay-v1" || appState.transferringToGodot || !appState.roomId) return;
+  const testCanvas = document.createElement("canvas");
+  const webgl2Available = Boolean(window.WebGL2RenderingContext && testCanvas.getContext("webgl2"));
+  if (!webgl2Available) {
+    $("graphicsNotice").classList.remove("hidden");
+    $("graphicsNoticeClose").focus();
+    return;
+  }
   const roomId = appState.roomId;
   const token = localStorage.getItem(`samkokgo-resume-${roomId}`);
   if (!token || appState.socket?.readyState !== WebSocket.OPEN) {
@@ -2159,6 +2166,7 @@ function installControls() {
     sendRoomAction("configure", { maxPlayers: sizes[(sizes.indexOf(current) + 1) % sizes.length] ?? 6 });
   });
   $("startGame").addEventListener("click", () => sendRoomAction("start"));
+  $("graphicsNoticeClose").addEventListener("click", () => $("graphicsNotice").classList.add("hidden"));
   $("leaveRoom").addEventListener("click", returnHome);
   $("exitGame").addEventListener("click", returnHome);
   $("cameraToggle").addEventListener("click", () => { appState.cameraMode = 1 - appState.cameraMode; });
