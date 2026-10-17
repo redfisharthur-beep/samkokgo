@@ -10,7 +10,7 @@ const godot = read("godot/scripts/battle/battle_art_main.gd");
 const project = read("godot/project.godot");
 
 test("new RPG homepage ships actual pixel assets and portrait panels", () => {
-  assert.match(html, /href="\/pixel-ui\.css\?v=hero-archive-20261016"/);
+  assert.match(html, /href="\/pixel-ui\.css\?v=field-refresh-20261017"/);
   assert.match(html, /SamkokGo/);
   for (const hero of ["liubei","caocao","sunquan","lvbu"]) {
     assert.match(html, new RegExp('data-hero="' + hero + '"'));
@@ -57,6 +57,7 @@ test("all screens share the 1672 by 941 pixel-art frame", () => {
   assert.match(css, /width: min\(100vw, 177\.7778vh\)/);
   assert.match(css, /height: min\(100vh, 56\.25vw\)/);
   assert.match(css, /\.hero-picker[\s\S]*lobby-pixel\.webp/);
+  assert.match(css, /\.home-screen \.kingdom-vista[\s\S]*lobby-pixel\.webp/);
   assert.match(css, /\.room-screen \.kingdom-vista[\s\S]*lobby-pixel\.webp/);
   assert.ok(existsSync(new URL("../public/assets/ui/lobby-pixel.webp", import.meta.url)));
 });
@@ -68,6 +69,8 @@ test("hero archive keeps portraits and controls available when WebGL is blocked"
   }
   assert.match(html, /天下名將錄/);
   assert.match(html, /id="heroShowcase"/);
+  assert.match(js, /WebGL2RenderingContext[\s\S]*graphicsNotice/);
+  assert.match(html, /此瀏覽器無法啟動戰鬥畫面/);
   assert.match(js, /heroStat\$\{key\}/);
   assert.match(css, /\.hero-archive-layout \{[\s\S]*grid-template-columns: minmax\(430px/);
 });
