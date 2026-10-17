@@ -126,7 +126,7 @@ export function advanceBattle(state, players, dt, now = Date.now(), difficulty =
   const alive = players.filter(p => !state.playerVitals[p.playerId]?.downed
     && !state.playerVitals[p.playerId]?.eliminated);
   state.spawnClock += dt;
-  if (!state.bossSpawned && state.elapsed >= 300) {
+  if (!state.bossSpawned && state.elapsed >= 120) {
     state.bossSpawned = true;
     state.bossesSpawned = [0];
     const target = alive[0] ?? { x: 0, z: 0 };
