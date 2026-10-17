@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeBattle, movePlayer, advanceBattle, chooseUpgrade, useAbility, useDash, COOP_SECONDS, syncPlayers } from "../shared/crossplay.mjs";
+import { makeBattle, movePlayer, advanceBattle, chooseUpgrade, useAbility, useDash, selectAttackTargets, COOP_SECONDS, syncPlayers, HERO_STATS } from "../shared/crossplay.mjs";
+import { HERO_IDS, HEROES } from "../public/heroes.mjs";
 const party = [{ playerId: "p1", heroId: "liubei", x: 0, z: 0 },
   { playerId: "p2", heroId: "sunquan", x: 1, z: 1 }];
 test("server initializes same authoritative health/XP for mixed renderers", () => {
@@ -105,4 +106,29 @@ test("server accepts dash actions only through the crossplay room handler", asyn
   const src = readFileSync(new URL("../worker.js", import.meta.url), "utf8");
   assert.match(src, /message\.type === "dash" && room\.status === "playing"/);
   assert.match(src, /useDash\(room\.gameState, player, participants/);
+});
+
+test("twelve summonable generals have distinct ranges and attack patterns", () => {
+  assert.equal(HERO_IDS.length, 12);
+  assert.deepEqual(HERO_IDS.slice(0, 3), ["liubei", "caocao", "sunquan"]);
+  assert.equal(Object.keys(HERO_STATS).length, HERO_IDS.length);
+  assert.equal(new Set(HERO_IDS.map(id => HERO_STATS[id].range)).size, HERO_IDS.length);
+  assert.equal(new Set(HERO_IDS.map(id => HERO_STATS[id].pattern)).size, HERO_IDS.length);
+  for (const id of HERO_IDS) assert.equal(HEROES[id].attackInterval, HERO_STATS[id].interval);
+});
+
+test("sweep, pierce, and chain attacks select different enemy shapes", () => {
+  const hero = { x: 0, z: 0 };
+  const enemies = [
+    { id: "a", x: 3, z: 0 }, { id: "b", x: 4, z: 0.6 },
+    { id: "c", x: 4, z: 4 }, { id: "d", x: 9, z: 0 }
+  ];
+  const sweep = selectAttackTargets(hero, enemies, { range: 12, pattern: "sweep" });
+  const pierce = selectAttackTargets(hero, enemies, { range: 12, pattern: "pierce" });
+  const single = selectAttackTargets(hero, enemies, { range: 12, pattern: "single" });
+  const chain = selectAttackTargets(hero, enemies, { range: 12, pattern: "chain" });
+  assert.deepEqual(sweep.map(enemy => enemy.id), ["a", "b"]);
+  assert.deepEqual(pierce.map(enemy => enemy.id), ["a", "b", "d"]);
+  assert.deepEqual(single.map(enemy => enemy.id), ["a"]);
+  assert.equal(chain.length, 3);
 });

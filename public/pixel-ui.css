@@ -730,3 +730,8 @@ html,body,#app { background: #102e46; color: #f8ebca; }
 
 /* Keep the sound control available over the pixel-art home screen. */
 .home-screen .home-controls { display:flex !important; position:absolute; z-index:12; top:auto; right:max(18px,env(safe-area-inset-right)); bottom:max(18px,env(safe-area-inset-bottom)); }
+
+/* Keep the Godot Web export inside the fullscreen shell during battle handoff. */
+html.godot-active, html.godot-active body { width:100%; height:100%; margin:0; overflow:hidden; }
+#godotStage { position:fixed; z-index:10000; inset:0; width:100vw; height:100dvh; background:#17261f; }
+#godotStage iframe { display:block; width:100%; height:100%; border:0; background:#17261f; }

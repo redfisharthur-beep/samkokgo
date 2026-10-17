@@ -5,17 +5,16 @@
  * Clients may submit movement direction and upgrade choices only.
  * No Godot or Three.js frame-loop damage is trusted in this mode.
  */
+import { HEROES } from "../public/heroes.mjs";
 export const COOP_SECONDS = 360;
 export const WORLD_X = 46;
 export const WORLD_Z = 25;
 export const ENEMY_LIMIT = 30;
 export const UPGRADE_IDS = ["power", "tempo", "reach", "speed"];
-export const HERO_STATS = Object.freeze({
-  liubei: { speed: 10.5, damage: 8, interval: 0.85, range: 8 },
-  caocao: { speed: 9.5, damage: 12, interval: 1.0, range: 8.5 },
-  sunquan: { speed: 11, damage: 7, interval: 0.60, range: 9 },
-  lvbu: { speed: 9.5, damage: 16, interval: 1.05, range: 6.5 }
-});
+export const HERO_STATS = Object.freeze(Object.fromEntries(Object.entries(HEROES).map(([id, hero]) => [id, {
+  speed: hero.speed, damage: hero.damage, interval: hero.attackInterval, range: hero.range,
+  pattern: hero.pattern, color: hero.color
+}])));
 const finite = (v, fallback = 0) => Number.isFinite(v) ? v : fallback;
 const bounded = (v, a, b) => Math.max(a, Math.min(b, finite(v)));
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -26,7 +25,8 @@ export function makeBattle(now = Date.now()) {
   return { schema: "crossplay-v1", elapsed: 0, startedAt: now, nextEnemy: 1, nextPickup: 1, nextProjectile: 1,
     spawnClock: 0, boss: null, bossSpawned: false, finalBossDefeated: false,
     bossesSpawned: [], energy: 0, enemies: [], pickups: [], projectiles: [], playerProgress: {},
-    playerVitals: {}, cooldowns: {}, dashCooldowns: {}, invulnerableUntil: {}, result: null, xp: 0, level: 1 };
+    playerVitals: {}, cooldowns: {}, dashCooldowns: {}, invulnerableUntil: {}, attacks: [], nextAttack: 1,
+    result: null, xp: 0, level: 1 };
 }
 export function syncPlayers(state, players) {
   for (const p of players) {
@@ -159,6 +159,61 @@ export function useAbility(state, playerId, players, now = Date.now()) {
   }
   return true;
 }
+
+export function selectAttackTargets(player, enemies, stats) {
+  const inRange = enemies.filter(enemy => distance(player, enemy) <= stats.range);
+  const primary = inRange.reduce((best, enemy) => !best || distance(player, enemy) < distance(player, best) ? enemy : best, null);
+  if (!primary) return [];
+  const distanceToPrimary = enemy => distance(primary, enemy);
+  switch (stats.pattern) {
+    case "sweep": return inRange.filter(enemy => distanceToPrimary(enemy) <= 3.8);
+    case "burst": return inRange.filter(enemy => distanceToPrimary(enemy) <= 4.2);
+    case "orbit": return enemies.filter(enemy => distance(player, enemy) <= Math.min(stats.range, 6.5));
+    case "whirl": return inRange.filter(enemy => distanceToPrimary(enemy) <= 3.2);
+    case "pierce":
+    case "fireline": {
+      const dx = primary.x - player.x; const dz = primary.z - player.z;
+      const length = Math.max(0.001, Math.hypot(dx, dz));
+      const width = stats.pattern === "fireline" ? 2.8 : 1.6;
+      return inRange.filter(enemy => {
+        const along = ((enemy.x - player.x) * dx + (enemy.z - player.z) * dz) / length;
+        const across = Math.abs((enemy.x - player.x) * dz - (enemy.z - player.z) * dx) / length;
+        return along >= 0 && along <= stats.range && across <= width;
+      });
+    }
+    case "crescent": {
+      const aim = Math.atan2(primary.z - player.z, primary.x - player.x);
+      return inRange.filter(enemy => {
+        const angle = Math.atan2(enemy.z - player.z, enemy.x - player.x);
+        return Math.abs(Math.atan2(Math.sin(angle - aim), Math.cos(angle - aim))) <= 1.25;
+      }).sort((a, b) => distance(player, a) - distance(player, b)).slice(0, 4);
+    }
+    case "fan":
+    case "volley": {
+      const aim = Math.atan2(primary.z - player.z, primary.x - player.x);
+      const limit = stats.pattern === "volley" ? 0.78 : 0.95;
+      const count = stats.pattern === "volley" ? 3 : 5;
+      return inRange.filter(enemy => {
+        const angle = Math.atan2(enemy.z - player.z, enemy.x - player.x);
+        return Math.abs(Math.atan2(Math.sin(angle - aim), Math.cos(angle - aim))) <= limit;
+      }).sort((a, b) => distance(player, a) - distance(player, b)).slice(0, count);
+    }
+    case "chain": {
+      const targets = [primary];
+      while (targets.length < 3) {
+        const next = inRange.filter(enemy => !targets.includes(enemy)
+          && targets.some(target => distance(target, enemy) <= 6.5))
+          .sort((a, b) => Math.min(...targets.map(target => distance(target, a)))
+            - Math.min(...targets.map(target => distance(target, b))))[0];
+        if (!next) break;
+        targets.push(next);
+      }
+      return targets;
+    }
+    default: return [primary];
+  }
+}
+
 export function advanceBattle(state, players, dt, now = Date.now(), difficulty = "normal") {
   if (!state || state.result) return state;
   dt = bounded(dt, 0, 1);
@@ -252,12 +307,21 @@ export function advanceBattle(state, players, dt, now = Date.now(), difficulty =
     const cooldownKey = "attack-" + player.playerId;
     const interval = Math.max(0.22, stats.interval * (1 - rank.tempo * 0.10));
     if ((state.cooldowns[cooldownKey] ?? 0) > now) continue;
-    const closest = state.enemies.reduce((best, e) => distance(e, player) <= stats.range + rank.reach * 1.2
-      && (!best || distance(e, player) < distance(best, player)) ? e : best, null);
-    if (!closest) continue;
-    closest.hp -= Math.round((stats.damage + bounded(player.gearAttack ?? 0, 0, 15) * 2) * (1 + rank.power * 0.22));
+    const attackStats = { ...stats, range: stats.range + rank.reach * 1.2 };
+    const targets = selectAttackTargets(player, state.enemies, attackStats);
+    if (!targets.length) continue;
+    const baseDamage = Math.round((stats.damage + bounded(player.gearAttack ?? 0, 0, 15) * 2) * (1 + rank.power * 0.22));
+    const hitDamage = stats.pattern === "sniper" ? Math.round(baseDamage * 1.55)
+      : stats.pattern === "single" || stats.pattern === "chain" ? baseDamage : Math.round(baseDamage * 0.78);
+    for (const target of targets) {
+      target.hp -= hitDamage;
+      if (target.hp <= 0) killEnemy(state, target);
+    }
     state.cooldowns[cooldownKey] = now + interval * 1000;
-    if (closest.hp <= 0) killEnemy(state, closest);
+    state.attacks.push({ id: state.nextAttack++, playerId: player.playerId, heroId: player.heroId,
+      pattern: stats.pattern, color: stats.color, from: { x: player.x, z: player.z },
+      to: { x: targets[0].x, z: targets[0].z }, targets: targets.slice(0, 5).map(target => ({ x: target.x, z: target.z })) });
+    if (state.attacks.length > 30) state.attacks.splice(0, state.attacks.length - 30);
   }
   for (const pickup of [...state.pickups]) {
     if (!alive.some(p => distance(p, pickup) < 2.6)) continue;

@@ -11,7 +11,7 @@ const HIT_LIGHT: AudioStream = preload("res://assets/audio/hit-light.wav")
 const HIT_HEAVY: AudioStream = preload("res://assets/audio/hit-heavy.wav")
 const TILE_SIZE := Vector2i(64, 32)
 const PROP_SIZE := Vector2i(96, 112)
-const HERO_IDS := ["liubei", "caocao", "sunquan", "lvbu"]
+const HERO_IDS := ["liubei", "caocao", "sunquan", "lvbu", "guanyu", "zhangfei", "zhaoyun", "zhugeliang", "huangzhong", "diaochan", "zhouyu", "zhangliao"]
 const MAX_ENEMIES := 64
 
 @onready var ground: TileMapLayer = $Ground
@@ -31,6 +31,7 @@ var _next_audio := 0
 var _ready_for_state := false
 var _active_map_id := "forest"
 var _map_tint := Color.WHITE
+var _seen_attack_fx: Dictionary = {}
 
 func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -151,6 +152,21 @@ func refresh(main, delta: float) -> void:
 		var vital: Dictionary = main.player_vitals.get(id, {})
 		teammate.call("set_health", float(vital.get("hp", 100.0)), float(vital.get("maxHp", 100.0)), true)
 
+	for attack in main.attack_events:
+		if not attack is Dictionary:
+			continue
+		var attack_id := str(attack.get("id", ""))
+		if attack_id.is_empty() or _seen_attack_fx.has(attack_id):
+			continue
+		_seen_attack_fx[attack_id] = true
+		var attacker_id := str(attack.get("playerId", ""))
+		var attacker_key := "self" if attacker_id == main.network.self_id else "teammate_" + attacker_id
+		if actors.has(attacker_key):
+			actors[attacker_key].call("play_attack")
+		_spawn_attack_fx(attack)
+	if _seen_attack_fx.size() > 120:
+		_seen_attack_fx.clear()
+
 	var seen_pickups: Dictionary = {}
 	for pickup in main.drops:
 		var pickup_id := str(pickup.get("id", ""))
@@ -221,6 +237,79 @@ func _ensure_actor(id: String, kind: String) -> Node2D:
 	actor.call("configure", id, kind)
 	actors[id] = actor
 	return actor
+
+func _spawn_attack_fx(attack: Dictionary) -> void:
+	var from_value: Dictionary = attack.get("from", {})
+	var to_value: Dictionary = attack.get("to", {})
+	if from_value.is_empty() or to_value.is_empty():
+		return
+	var start := _world_to_screen(Vector2(float(from_value.get("x", 0.0)), float(from_value.get("z", 0.0))))
+	var target := _world_to_screen(Vector2(float(to_value.get("x", 0.0)), float(to_value.get("z", 0.0))))
+	var pattern := str(attack.get("pattern", "single"))
+	var color := Color("#%06x" % int(attack.get("color", 0xe5bc67)))
+	if pattern == "fireline":
+		color = Color("#f08349")
+	var lines: Array[Line2D] = []
+	var slash := Line2D.new()
+	slash.width = 2.5 if pattern == "sniper" else (7.0 if pattern in ["sweep", "orbit", "burst", "whirl", "crescent"] else 4.0)
+	slash.default_color = color.lightened(0.42)
+	slash.begin_cap_mode = Line2D.LINE_CAP_BOX
+	slash.end_cap_mode = Line2D.LINE_CAP_BOX
+	if pattern == "orbit":
+		for i in range(17):
+			var angle := float(i) / 16.0 * TAU
+			slash.add_point(start + Vector2(cos(angle), sin(angle) * 0.72) * 62.0)
+	elif pattern == "sweep":
+		var center := (start + target) * 0.5
+		slash.add_point(center + Vector2(-54, 22)); slash.add_point(center); slash.add_point(center + Vector2(54, -22))
+	elif pattern == "burst":
+		for i in range(17):
+			var angle := float(i) / 16.0 * TAU
+			slash.add_point(target + Vector2(cos(angle), sin(angle) * 0.72) * 37.0)
+	elif pattern == "whirl":
+		for i in range(17):
+			var angle := float(i) / 16.0 * TAU
+			slash.add_point(target + Vector2(cos(angle), sin(angle) * 0.72) * 29.0)
+	elif pattern == "crescent":
+		for i in range(13):
+			var angle := -PI * 0.9 + float(i) / 12.0 * PI * 0.9
+			slash.add_point(target + Vector2(cos(angle), sin(angle) * 0.72) * 49.0)
+	elif pattern == "fireline":
+		var side := (target - start).normalized().orthogonal() * 8.0
+		for shift in [-1.0, 1.0]:
+			var flame := Line2D.new()
+			flame.width = 5.0
+			flame.default_color = color.lightened(0.36)
+			flame.begin_cap_mode = Line2D.LINE_CAP_BOX
+			flame.end_cap_mode = Line2D.LINE_CAP_BOX
+			flame.add_point(start + side * shift); flame.add_point(target + side * shift)
+			lines.append(flame)
+	elif pattern in ["fan", "volley"]:
+		for value in attack.get("targets", []):
+			if not value is Dictionary:
+				continue
+			var end := _world_to_screen(Vector2(float(value.get("x", 0.0)), float(value.get("z", 0.0))))
+			var branch := Line2D.new()
+			branch.width = 5.0 if pattern == "volley" else 7.0
+			branch.default_color = color.lightened(0.42)
+			branch.begin_cap_mode = Line2D.LINE_CAP_BOX
+			branch.end_cap_mode = Line2D.LINE_CAP_BOX
+			branch.add_point(start); branch.add_point(end)
+			lines.append(branch)
+	elif pattern == "chain":
+		slash.add_point(start)
+		for value in attack.get("targets", []):
+			if value is Dictionary:
+				slash.add_point(_world_to_screen(Vector2(float(value.get("x", 0.0)), float(value.get("z", 0.0)))))
+	else:
+		slash.add_point(start); slash.add_point(target)
+	if lines.is_empty():
+		lines.append(slash)
+	for line in lines:
+		effects.add_child(line)
+		var tween := create_tween()
+		tween.tween_property(line, "modulate:a", 0.0, 0.18)
+		tween.tween_callback(line.queue_free)
 
 func _spawn_hit(position_on_screen: Vector2, heavy: bool = false) -> void:
 	# A bright center flash and sharp pixel chips make each confirmed hit readable.

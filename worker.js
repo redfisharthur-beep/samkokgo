@@ -350,7 +350,7 @@ export class GameHub extends DurableObject {
     if (message.type === "attack-fx" && attachment.playerId === room.hostId && room.status === "playing") {
       const from = sanitizePoint(message.from);
       const to = sanitizePoint(message.to);
-      const heroId = ["liubei", "caocao", "sunquan", "lvbu"].includes(message.heroId) ? message.heroId : "liubei";
+      const heroId = Object.hasOwn(HERO_STATS, message.heroId) ? message.heroId : "liubei";
       const playerId = String(message.playerId ?? attachment.playerId).slice(0, 64);
       if (from && to) this.broadcast(room.id, { type: "attack-fx", from, to, heroId, playerId }, socket);
       return;
@@ -532,7 +532,7 @@ export class GameHub extends DurableObject {
 }
 
 function tagFor(roomId) { return `room:${roomId}`; }
-function sanitizeHeroId(heroId) { return ["liubei", "caocao", "sunquan", "lvbu"].includes(heroId) ? heroId : "liubei"; }
+function sanitizeHeroId(heroId) { return Object.hasOwn(HERO_STATS, heroId) ? heroId : "liubei"; }
 function sanitizeMapId(mapId) { return ["forest", "camp", "city"].includes(mapId) ? mapId : "forest"; }
 function sanitizeDifficulty(difficulty) { return ["easy", "normal", "hard"].includes(difficulty) ? difficulty : "normal"; }
 function sanitizePoint(value) {

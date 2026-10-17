@@ -23,6 +23,13 @@ func _process(delta: float) -> void:
 		pixel_world.call("configure_map", current_map_id)
 		pixel_world.refresh(self, delta)
 
+func _draw_battlefield(size: Vector2) -> void:
+	# The isometric world supplies the battle backdrop. Drawing the legacy
+	# battlefield-pixel image here at the same time created a double exposure.
+	if mode == "battle" and pixel_world != null:
+		return
+	super._draw_battlefield(size)
+
 func _draw_battle(size: Vector2) -> void:
 	# All ground, props, players, enemies and hit sparks are drawn by real
 	# TileMapLayer / Sprite2D / AnimatedSprite2D children behind the HUD.
@@ -60,7 +67,7 @@ func _draw_hud(size: Vector2) -> void:
 	draw_rect(Rect2(Vector2(0, top_height - 2), Vector2(size.x, 2)), accent)
 	draw_rect(Rect2(Vector2(16, 12), Vector2(4, top_height - 24)), accent)
 	draw_rect(Rect2(Vector2(size.x - 20, 12), Vector2(4, top_height - 24)), accent)
-	var hero_names := {"liubei":"劉備","caocao":"曹操","sunquan":"孫權","lvbu":"呂布"}
+	var hero_names := {"liubei":"劉備","caocao":"曹操","sunquan":"孫權","lvbu":"呂布","guanyu":"關羽","zhangfei":"張飛","zhaoyun":"趙雲","zhugeliang":"諸葛亮","huangzhong":"黃忠","diaochan":"貂蟬","zhouyu":"周瑜","zhangliao":"張遼"}
 	var hero_name: String = str(hero_names.get(selected_hero_id, "劉備"))
 	var left_w: float = minf(340.0, size.x * 0.33)
 	var panel_left := Rect2(Vector2(24, 12), Vector2(left_w, top_height - 26))

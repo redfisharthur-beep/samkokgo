@@ -1,5 +1,6 @@
 export const PROFILE_KEY = "samkokgo-progression-v1";
-export const HERO_ORDER = ["liubei", "caocao", "sunquan", "lvbu"];
+import { HERO_IDS } from "./heroes.mjs";
+export const HERO_ORDER = HERO_IDS;
 export const MAP_ORDER = ["forest", "camp", "city"];
 export const SUMMON_COST = 100;
 

@@ -66,6 +66,8 @@ var gear_attack_bonus := 0
 var gear_defense_bonus := 0
 var gear_speed_bonus := 0
 var current_map_id := "forest"
+var attack_events: Array = []
+const HERO_IDS := ["liubei", "caocao", "sunquan", "lvbu", "guanyu", "zhangfei", "zhaoyun", "zhugeliang", "huangzhong", "diaochan", "zhouyu", "zhangliao"]
 
 func _ready() -> void:
 	player_pos = get_viewport_rect().size * 0.5
@@ -73,9 +75,10 @@ func _ready() -> void:
 	network.room_event.connect(_on_room_event)
 	network.connection_changed.connect(_on_connection_changed)
 	if OS.has_feature("web"):
+		JavaScriptBridge.eval("(function(){const doc=window.parent===window?document:window.parent.document;const root=doc.documentElement;const enter=()=>{if(!doc.fullscreenElement&&root.requestFullscreen)root.requestFullscreen({navigationUI:'hide'}).catch(()=>{});};window.addEventListener('pointerdown',enter,{capture:true});window.addEventListener('keydown',enter,{capture:true});enter();})();")
 		var invited_room := str(JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('room') || ''")).to_upper()
 		var requested_hero := str(JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('hero') || 'liubei'"))
-		if requested_hero in ["liubei", "caocao", "sunquan", "lvbu"]:
+		if requested_hero in HERO_IDS:
 			selected_hero_id = requested_hero
 		gear_attack_bonus = int(JavaScriptBridge.eval("Number(new URLSearchParams(window.location.search).get('atk') || 0)"))
 		gear_defense_bonus = int(JavaScriptBridge.eval("Number(new URLSearchParams(window.location.search).get('def') || 0)"))
@@ -173,15 +176,6 @@ func _process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if mode == "battle" and OS.has_feature("web"):
-		if event is InputEventKey:
-			var exit_key := event as InputEventKey
-			if exit_key.pressed and exit_key.keycode == KEY_ESCAPE:
-				var browser_fullscreen: bool = bool(JavaScriptBridge.eval("!!document.fullscreenElement"))
-				if browser_fullscreen:
-					JavaScriptBridge.eval("document.exitFullscreen()")
-				else:
-					_leave_battle_to_web()
-				return
 		if event is InputEventScreenTouch:
 			var exit_touch := event as InputEventScreenTouch
 			if exit_touch.pressed and Rect2(12.0, 100.0, 132.0, 48.0).has_point(exit_touch.position):
@@ -948,6 +942,7 @@ func _publish_game_state() -> void:
 func _apply_game_state(state: Dictionary) -> void:
 	if state.is_empty():
 		return
+	attack_events = state.get("attacks", [])
 	elapsed = float(state.get("elapsed", elapsed))
 	boss_spawned = state.get("boss") is Dictionary and not state.get("boss").is_empty()
 	if boss_spawned:
@@ -1075,7 +1070,8 @@ func _finish_battle_to_web(result: String) -> void:
 		network.leave_room()
 		var safe_result := "victory" if result == "victory" else "defeat"
 		var return_path := "/?result=%s&runId=%s&map=%s" % [safe_result, room_id.uri_encode(), current_map_id.uri_encode()]
-		JavaScriptBridge.eval("window.location.replace('" + return_path + "')")
+		var return_script := "if(window.parent!==window){window.parent.postMessage({type:'samkokgo-godot-return',result:'%s',runId:'%s',map:'%s'},'*');}else{window.location.replace('%s');}" % [safe_result, room_id, current_map_id, return_path]
+		JavaScriptBridge.eval(return_script)
 
 func _leave_battle_to_web() -> void:
 	if navigating_to_lobby:
@@ -1083,7 +1079,9 @@ func _leave_battle_to_web() -> void:
 	navigating_to_lobby = true
 	network.leave_room()
 	if OS.has_feature("web"):
-		JavaScriptBridge.eval("window.location.replace('/?result=exit&runId=" + room_id.uri_encode() + "')")
+		var return_path := "/?result=exit&runId=%s&map=%s" % [room_id.uri_encode(), current_map_id.uri_encode()]
+		var return_script := "if(window.parent!==window){window.parent.postMessage({type:'samkokgo-godot-return',result:'exit',runId:'%s',map:'%s'},'*');}else{window.location.replace('%s');}" % [room_id, current_map_id, return_path]
+		JavaScriptBridge.eval(return_script)
 	else:
 		mode = "lobby"
 
@@ -1140,7 +1138,7 @@ func _draw_battle(size: Vector2) -> void:
 		_draw_player_vital(remote_pos, vital, 0.82)
 	var own_vital: Dictionary = player_vitals.get(network.self_id, {})
 	var own_out := bool(own_vital.get("downed", false)) or bool(own_vital.get("eliminated", false))
-	var hero_colors := {"liubei": Color("#708b78"), "caocao": Color("#7b778c"), "sunquan": Color("#7896a1"), "lvbu": Color("#b47665")}
+	var hero_colors := {"liubei": Color("#708b78"), "caocao": Color("#7b778c"), "sunquan": Color("#7896a1"), "lvbu": Color("#b47665"), "guanyu": Color("#9a7652"), "zhangfei": Color("#9a665d"), "zhaoyun": Color("#8b9da5"), "zhugeliang": Color("#829280"), "huangzhong": Color("#b19a6f"), "diaochan": Color("#a8889b"), "zhouyu": Color("#b5795e"), "zhangliao": Color("#7e8394")}
 	var hero_color: Color = hero_colors.get(selected_hero_id, Color("#708b78"))
 	_draw_hero(player_pos, 1.0 + minf(0.16, level * 0.008), hero_color.darkened(0.45) if own_out else hero_color, Color("#353b37"), Color("#c4a766"), 0.0)
 	if room_connected:
@@ -1235,7 +1233,7 @@ func _draw_hud(size: Vector2) -> void:
 	draw_rect(Rect2(Vector2(0, 0), Vector2(size.x, 82)), Color(0.17, 0.19, 0.17, 0.85))
 	_draw_bar(Rect2(25, 24, minf(240, size.x * 0.28), 18), hp / max_hp, RUST)
 	_draw_bar(Rect2(25, 52, minf(240, size.x * 0.28), 10), float(xp) / float(xp_goal), JADE)
-	var hero_labels := {"liubei": "劉備", "caocao": "曹操", "sunquan": "孫權", "lvbu": "呂布"}
+	var hero_labels := {"liubei": "劉備", "caocao": "曹操", "sunquan": "孫權", "lvbu": "呂布", "guanyu":"關羽", "zhangfei":"張飛", "zhaoyun":"趙雲", "zhugeliang":"諸葛亮", "huangzhong":"黃忠", "diaochan":"貂蟬", "zhouyu":"周瑜", "zhangliao":"張遼"}
 	draw_string(UI_FONT, Vector2(145, 20), str(hero_labels.get(selected_hero_id, "劉備")), HORIZONTAL_ALIGNMENT_LEFT, 100, 16, PAPER)
 	draw_string(UI_FONT, Vector2(25, 79), "Lv.%d  ·  %d" % [level, kills], HORIZONTAL_ALIGNMENT_LEFT, 170, 14, PAPER)
 	var timer := int(maxf(0.0, 360.0 - elapsed))

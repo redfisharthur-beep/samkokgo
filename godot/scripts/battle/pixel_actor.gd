@@ -27,6 +27,7 @@ var hit_tween: Tween
 var dash_tween: Tween
 var downed := false
 var _initialized := false
+var _hero_tint := Color.WHITE
 
 func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -54,6 +55,8 @@ func configure(id: String, actor_kind: String = "grunt") -> void:
 	if not cached_frames.has(actor_kind):
 		cached_frames[actor_kind] = _make_frames(_texture_for(actor_kind))
 	animated.sprite_frames = cached_frames[actor_kind]
+	_hero_tint = _tint_for(actor_kind) if actor_kind in ["liubei", "caocao", "sunquan", "lvbu", "guanyu", "zhangfei", "zhaoyun", "zhugeliang", "huangzhong", "diaochan", "zhouyu", "zhangliao"] else Color.WHITE
+	animated.modulate = _hero_tint
 	animated.play("idle_front")
 	_initialized = false
 	if actor_kind == "boss":
@@ -84,14 +87,22 @@ func _make_frames(texture: Texture2D) -> SpriteFrames:
 
 func _texture_for(id: String) -> Texture2D:
 	match id:
-		"liubei": return SHEET_LIUBEI
-		"caocao": return SHEET_CAOCAO
-		"sunquan": return SHEET_SUNQUAN
-		"lvbu": return SHEET_LVBU
+		"liubei", "zhaoyun": return SHEET_LIUBEI
+		"caocao", "zhugeliang", "diaochan", "zhouyu", "zhangliao": return SHEET_CAOCAO
+		"sunquan", "huangzhong": return SHEET_SUNQUAN
+		"lvbu", "guanyu", "zhangfei": return SHEET_LVBU
 		"runner": return SHEET_RUNNER
 		"archer": return SHEET_ARCHER
 		"boss": return SHEET_BOSS
 		_: return SHEET_GRUNT
+
+func _tint_for(id: String) -> Color:
+	var palette := {
+		"liubei": Color.WHITE, "caocao": Color("#d7d0b0"), "sunquan": Color("#c1e0e9"), "lvbu": Color("#f0c9b6"),
+		"guanyu": Color("#e9c87b"), "zhangfei": Color("#e28c78"), "zhaoyun": Color("#d8e4eb"), "zhugeliang": Color("#c7dfbd"),
+		"huangzhong": Color("#ead79a"), "diaochan": Color("#e6bfd7"), "zhouyu": Color("#edaa82"), "zhangliao": Color("#c1c9ea")
+	}
+	return palette.get(id, Color.WHITE)
 
 func set_visual_position(next: Vector2, delta: float, snap: bool = false) -> void:
 	if _initialized and not snap and position.distance_to(next) > 55.0:
@@ -116,7 +127,7 @@ func set_visual_position(next: Vector2, delta: float, snap: bool = false) -> voi
 			_set_animation("attack_back" if animated.animation.ends_with("back") else "attack_front")
 		if attack_seconds <= 0.0:
 			_set_animation("idle_back" if animated.animation.ends_with("back") else "idle_front")
-	animated.modulate = Color(0.55, 0.59, 0.6, 0.75) if downed else Color.WHITE
+	animated.modulate = Color(0.55, 0.59, 0.6, 0.75) if downed else _hero_tint
 
 func play_attack() -> void:
 	if animated == null:

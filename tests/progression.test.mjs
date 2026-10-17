@@ -23,7 +23,7 @@ test("new profile offers three starting generals and saves safely", () => {
 test("summon spends clear reward and unlocks a locked general", () => {
   const profile = freshProfile();
   profile.seals = SUMMON_COST;
-  const draw = summonHero(profile, () => 0.99);
+  const draw = summonHero(profile, () => 0);
   assert.deepEqual(draw, { ok: true, heroId: "lvbu" });
   assert.equal(profile.seals, 0);
   assert.equal(summonHero(profile).reason, "not-enough-seals");

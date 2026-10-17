@@ -1,14 +1,9 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
 import { godotBattlePath, handoffKey, acceptedResult } from "/lobby-flow.mjs";
 import { loadProfile, saveProfile, summonHero, claimRun, equipGear, equippedBonuses, SUMMON_COST } from "/progression.mjs";
+import { HEROES, HERO_IDS } from "/heroes.mjs";
 
 const COLORS = [0x77877d, 0xb67b6d, 0x8097a0, 0xb49b6e, 0x8e8290, 0x68766b];
-const HEROES = {
-  liubei: { name: "劉備", color: COLORS[0], speed: 11, damage: 1, cadence: 780, range: 17, role: "support" },
-  caocao: { name: "曹操", color: COLORS[5], speed: 10.4, damage: 2, cadence: 980, range: 20, role: "commander" },
-  sunquan: { name: "孫權", color: COLORS[2], speed: 11.6, damage: 1, cadence: 610, range: 19, role: "ranged" },
-  lvbu: { name: "呂布", color: COLORS[1], speed: 10, damage: 3, cadence: 1250, range: 12, role: "vanguard" }
-};
 const MAPS = {
   forest: { ground: 0xc4c8b6, path: 0xd1c7b2, sky: 0xc7d0c9, leaf: 0x839184 },
   camp: { ground: 0xc9c0aa, path: 0xb7a589, sky: 0xd2cabb, leaf: 0x9a846c },
@@ -466,7 +461,7 @@ function makeWarrior(color, hero = false, heroId = "liubei", enemyKind = "grunt"
     elite: { cloth: 0x77756a, armor: 0x464a47, trim: 0xc1a56f, dark: 0x343a37, skin: 0xc8aa91, accent: 0x9a746a },
     boss: { cloth: 0x66585d, armor: 0x383e3e, trim: 0xc1a56f, dark: 0x292f30, skin: 0xb8957f, accent: 0xb47e72 }
   };
-  const palette = schemes[hero ? heroId : enemyKind] ?? schemes.grunt;
+  const palette = schemes[hero ? (HEROES[heroId]?.portrait ?? heroId) : enemyKind] ?? schemes.grunt;
   const rig = new THREE.Group();
   group.add(rig);
   const bodyPivot = new THREE.Group();
@@ -614,34 +609,32 @@ function updateWarriorMotion(visual, now) {
 }
 
 
-const PIXEL_GENERAL_LORE = {
-  liubei: ["劉備 · 仁德之主", "蜀國主公 · 綠金甲冑，重視同伴生存與支援。"],
-  caocao: ["曹操 · 亂世梟雄", "魏國主公 · 黑金重甲，擅長統帥與強力攻擊。"],
-  sunquan: ["孫權 · 江東霸主", "吳國主公 · 青藍戰袍，快速遠距離壓制敵軍。"],
-  lvbu: ["呂布 · 無雙戰神", "群雄猛將 · 赤金戰鎧，以重擊突破重圍。"]
-};
-const GENERAL_ROLES = {
-  liubei: "仁德支援", caocao: "統帥重擊", sunquan: "迅捷遠射", lvbu: "破陣先鋒"
-};
+const PATTERN_LABELS = { single: "長槍點刺", sweep: "劍氣橫掃", volley: "三箭扇射", orbit: "方天旋戟", burst: "重擊爆發", pierce: "直線貫穿", fan: "遠距扇形", sniper: "蓄力狙擊", whirl: "雙刃追斬", fireline: "烈焰直線", chain: "三段連鎖", crescent: "半月弧斬" };
+const PIXEL_GENERAL_LORE = Object.fromEntries(Object.entries(HEROES).map(([id, hero]) => [id,
+  [`${hero.name} · ${hero.title}`, `${hero.faction}國武將 · ${hero.description}`]]));
+const GENERAL_ROLES = Object.fromEntries(Object.entries(HEROES).map(([id, hero]) => [id, PATTERN_LABELS[hero.pattern]]));
 const portraitCache = new Map();
 function paintGeneral(canvas, heroId) {
-  if (!canvas || !PIXEL_GENERAL_LORE[heroId]) return;
-  if (!portraitCache.has(heroId)) {
+  const portraitId = HEROES[heroId]?.portrait ?? heroId;
+  if (!canvas || !HEROES[heroId]) return;
+  if (!portraitCache.has(portraitId)) {
     const pic = new Image();
     const ready = new Promise((resolve) => {
       pic.onload = () => resolve(pic);
       pic.onerror = () => resolve(null);
     });
-    pic.src = `/assets/pixel/actors/${heroId}-premium.png`;
-    portraitCache.set(heroId, ready);
+    pic.src = `/assets/pixel/actors/${portraitId}-premium.png`;
+    portraitCache.set(portraitId, ready);
   }
-  portraitCache.get(heroId).then((pic) => {
+  portraitCache.get(portraitId).then((pic) => {
     if (!pic || !canvas.isConnected) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, 56, 72);
+    ctx.filter = `hue-rotate(${HEROES[heroId].tint ?? 0}deg) saturate(1.18)`;
     ctx.drawImage(pic, 0, 0, 56, 72, 0, 0, 56, 72);
+    ctx.filter = "none";
   });
 }
 function refreshGeneralPresentation(heroId) {
@@ -651,9 +644,11 @@ function refreshGeneralPresentation(heroId) {
   if ($("heroInfo")) $("heroInfo").textContent = lore[1];
   if ($("heroRole")) $("heroRole").textContent = GENERAL_ROLES[heroId] ?? GENERAL_ROLES.liubei;
   if ($("heroPassive")) $("heroPassive").textContent = lore[1].split(" · ").at(-1);
+  const showcase = $("heroShowcase");
+  if (showcase) paintGeneral(showcase, heroId);
   const stats = [
-    ["攻擊", Math.min(100, hero.damage / 3 * 100), `${hero.damage}`],
-    ["攻速", Math.min(100, 1250 / hero.cadence * 100), `${(60000 / hero.cadence).toFixed(1)} 次/分`],
+    ["攻擊", Math.min(100, hero.damage / 25 * 100), `${hero.damage}`],
+    ["攻速", Math.min(100, 1.6 / hero.attackInterval * 100), `${(60 / hero.attackInterval).toFixed(1)} 次/分`],
     ["射程", Math.min(100, hero.range / 20 * 100), `${hero.range} m`],
     ["移速", Math.min(100, hero.speed / 12 * 100), `${hero.speed.toFixed(1)}`]
   ];
@@ -696,7 +691,7 @@ function refreshHeroLocks() {
     }
   });
   const rosterCount = $("unlockedHeroCount");
-  if (rosterCount) rosterCount.textContent = String(profile.unlockedHeroes.length);
+  if (rosterCount) rosterCount.textContent = `${profile.unlockedHeroes.length} / ${HERO_IDS.length}`;
 }
 function renderProgression() {
   refreshHeroLocks();
@@ -735,6 +730,24 @@ function renderProgression() {
   }
 }
 function initializeGeneralArt() {
+  ui.heroChoices.replaceChildren(...HERO_IDS.map(heroId => {
+    const hero = HEROES[heroId];
+    const card = document.createElement("button");
+    card.className = "hero-choice";
+    card.type = "button";
+    card.dataset.hero = heroId;
+    card.style.backgroundColor = `#${hero.color.toString(16).padStart(6, "0")}`;
+    card.setAttribute("aria-label", hero.name);
+    card.title = `${hero.name}｜射程 ${hero.range}｜${PATTERN_LABELS[hero.pattern]}`;
+    const faction = document.createElement("span"); faction.className = "hero-card-faction"; faction.textContent = `${hero.faction}　◆　${PATTERN_LABELS[hero.pattern]}`;
+    const portrait = document.createElement("canvas"); portrait.className = "hero-card-art"; portrait.width = 56; portrait.height = 72;
+    const name = document.createElement("b"); name.textContent = hero.name;
+    const hint = document.createElement("small"); hint.textContent = `${hero.title} · 射程 ${hero.range}`;
+    card.append(faction, portrait, name, hint);
+    paintGeneral(portrait, heroId);
+    card.addEventListener("click", () => setHero(heroId));
+    return card;
+  }));
   document.querySelectorAll("canvas[data-portrait]").forEach(c => paintGeneral(c, c.dataset.portrait));
   $("pickHero")?.addEventListener("click", () => showGeneralPicker(true));
   $("closeHeroPicker")?.addEventListener("click", () => showGeneralPicker(false));
@@ -1249,12 +1262,42 @@ function transferToGodot() {
   const navigate = () => {
     if (navigated) return;
     navigated = true;
-    location.assign(destination);
+    mountGodotBattle(destination);
   };
   socket.addEventListener("close", navigate, { once: true });
   socket.close(4100, "handoff"); // reserves the same player on Cloudflare
   setTimeout(navigate, 1800);
 }
+
+function mountGodotBattle(destination) {
+  const stage = document.createElement("div");
+  stage.id = "godotStage";
+  stage.setAttribute("aria-label", "三國戰場");
+  const frame = document.createElement("iframe");
+  frame.title = "三國戰場";
+  frame.allow = "autoplay; fullscreen; gamepad";
+  frame.setAttribute("allowfullscreen", "");
+  frame.src = destination;
+  stage.append(frame);
+  document.body.append(stage);
+  document.documentElement.classList.add("godot-active");
+  appState.godotFrame = frame;
+}
+
+window.addEventListener("message", event => {
+  if (event.origin !== location.origin || event.source !== appState.godotFrame?.contentWindow) return;
+  const data = event.data;
+  if (!data || data.type !== "samkokgo-godot-return") return;
+  const result = acceptedResult(data.result);
+  if (!result) return;
+  appState.godotFrame.closest("#godotStage")?.remove();
+  appState.godotFrame = null;
+  document.documentElement.classList.remove("godot-active");
+  appState.transferringToGodot = false;
+  const query = new URLSearchParams({ result, runId: String(data.runId ?? ""), map: String(data.map ?? "forest") });
+  history.replaceState(null, "", `/?${query}`);
+  showWebResult(result);
+});
 
 function showWebResult(outcome) {
   const result = acceptedResult(outcome);
@@ -1647,8 +1690,6 @@ function requestGameFullscreen() {
     // Browsers reject an unsolicited page-load request. Calling this again
     // from the first real tap/click enters fullscreen without a separate toggle.
     Promise.resolve(page.requestFullscreen({ navigationUI: "hide" })).then(() => {
-      document.removeEventListener("pointerdown", requestGameFullscreen, true);
-      document.removeEventListener("keydown", requestGameFullscreen, true);
       screen.orientation?.lock?.("landscape").catch(() => {});
     }).catch(() => {});
   } catch { /* The next trusted input retries while preserving the game screen. */ }
@@ -1877,7 +1918,7 @@ function updateCombat(now, delta) {
       const hero = HEROES[heroId] ?? HEROES.liubei;
       const progress = ensureProgress(player.id);
       const target = nearestEnemy(player.position);
-      if (target && target.group.position.distanceTo(player.position) < hero.range + progress.upgrades.reach * 2) {
+      if (target && target.group.position.distanceTo(player.position) < hero.range * 2 + progress.upgrades.reach * 2) {
         if (player.id === appState.selfId) playSound("attack");
         makeProjectile(player.position, target.group.position, heroId, progress.upgrades);
         const attackerVisual = player.id === appState.selfId ? localPlayer : playerVisuals.get(player.id);
@@ -1893,7 +1934,7 @@ function updateCombat(now, delta) {
         }
         const powerRank = progress.upgrades.power;
         const reachRank = progress.upgrades.reach;
-        const baseDamage = hero.damage + powerRank + (powerRank >= 5 ? 1 : 0);
+        const baseDamage = hero.damage / 8 + powerRank + (powerRank >= 5 ? 1 : 0);
         target.group.userData.hp -= baseDamage;
         target.group.userData.hitUntil = now + 85;
         const hitX = target.group.position.x - player.position.x;
@@ -1928,7 +1969,7 @@ function updateCombat(now, delta) {
         }
         if (target.group.userData.hp <= 0) awardKill(target, player.id);
         const tempoScale = Math.pow(.9, progress.upgrades.tempo) * (progress.upgrades.tempo >= 5 ? .82 : 1);
-        appState.nextPlayerAttacks.set(player.id, now + hero.cadence * tempoScale);
+        appState.nextPlayerAttacks.set(player.id, now + hero.attackInterval * 1000 * tempoScale);
       } else appState.nextPlayerAttacks.set(player.id, now + 160);
     }
     appState.pickups = appState.pickups.filter((pickup) => {
@@ -2153,7 +2194,6 @@ function installControls() {
   });
 
   $("quickJoin").addEventListener("click", quickJoin);
-  ui.heroChoices.querySelectorAll("[data-hero]").forEach((button) => button.addEventListener("click", () => setHero(button.dataset.hero)));
   $("createRoom").addEventListener("click", createRoom);
   $("refreshRooms").addEventListener("click", async () => {
     const open = ui.home.classList.toggle("rooms-open");
@@ -2221,6 +2261,7 @@ function sendRoomAction(type, extra = {}) {
 window.addEventListener("resize", onResize);
 document.addEventListener("fullscreenchange", () => {
   document.documentElement.classList.toggle("is-fullscreen", Boolean(document.fullscreenElement));
+  if (!document.fullscreenElement) requestGameFullscreen();
 });
 document.addEventListener("pointerdown", requestGameFullscreen, true);
 document.addEventListener("keydown", requestGameFullscreen, true);

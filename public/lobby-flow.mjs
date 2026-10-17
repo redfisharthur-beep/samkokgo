@@ -1,10 +1,11 @@
 /** Website owns the lobby and settlement; Godot owns the battlefield. */
+import { HERO_IDS } from "./heroes.mjs";
 export const HANDOFF_PREFIX = "samkokgo-handoff-";
 export const validRoomId = id => /^[0-9A-F]{8}$/.test(String(id ?? "").toUpperCase());
 export const handoffKey = roomId => HANDOFF_PREFIX + String(roomId).toUpperCase();
 export function godotBattlePath(roomId, heroId = "liubei", bonuses = {}, mapId = "forest") {
   if (!validRoomId(roomId)) throw new Error("Invalid room ID");
-  const hero = ["liubei", "caocao", "sunquan", "lvbu"].includes(heroId) ? heroId : "liubei";
+  const hero = HERO_IDS.includes(heroId) ? heroId : "liubei";
   const params = new URLSearchParams({
     room: String(roomId).toUpperCase(), hero,
     atk: String(Math.max(0, Math.min(15, Math.floor(bonuses.attack ?? 0)))),

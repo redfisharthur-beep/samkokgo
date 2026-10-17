@@ -10,7 +10,7 @@ const godot = read("godot/scripts/battle/battle_art_main.gd");
 const project = read("godot/project.godot");
 
 test("new RPG homepage ships actual pixel assets and portrait panels", () => {
-  assert.match(html, /href="\/pixel-ui\.css\?v=pixel-fullscreen-20261017c"/);
+  assert.match(html, /href="\/pixel-ui\.css\?v=fullscreen-roster-20261017d"/);
   assert.match(html, /SamkokGo/);
   for (const hero of ["liubei","caocao","sunquan","lvbu"]) {
     assert.match(html, new RegExp('data-hero="' + hero + '"'));
@@ -64,9 +64,8 @@ test("all screens share the 1672 by 941 pixel-art frame", () => {
 test("hero archive keeps portraits and controls available when WebGL is blocked", () => {
   assert.match(js, /catch \(error\) \{[\s\S]*WebGL unavailable/);
   assert.match(js, /renderer = \{ setSize\(\) \{\}, render\(\) \{\} \}/);
-  for (const hero of ["liubei", "caocao", "sunquan", "lvbu"]) {
-    assert.match(html, new RegExp(`class="hero-card-art" src="/assets/pixel/actors/${hero}-premium\\.png"`));
-  }
+  assert.match(js, /HERO_IDS\.map\(heroId =>/);
+  assert.match(js, /portraitId}-premium\.png/);
   assert.match(html, /天下名將錄/);
   assert.match(html, /id="heroShowcase"/);
   assert.match(js, /WebGL2RenderingContext[\s\S]*graphicsNotice/);
@@ -90,6 +89,15 @@ test("fullscreen is requested at launch and retried on the first trusted input",
   assert.doesNotMatch(godot, /切換全螢幕/);
   const main = read("godot/scripts/main.gd");
   assert.doesNotMatch(main, /func _toggle_web_fullscreen\(\)/);
-  assert.match(main, /document\.exitFullscreen\(\)/);
+  assert.match(main, /requestFullscreen\(\{navigationUI:'hide'\}\)/);
+  assert.match(js, /function mountGodotBattle\(destination\)/);
+  assert.match(js, /samkokgo-godot-return/);
+  assert.match(css, /#godotStage iframe \{ display:block; width:100%; height:100%/);
+  assert.doesNotMatch(main, /document\.exitFullscreen\(\)/);
   assert.match(js, /setPixelRatio\(Math\.min\(window\.devicePixelRatio \|\| 1, 2\.5\)\)/);
+});
+
+test("battle only draws the Godot isometric battlefield background once", () => {
+  assert.match(godot, /func _draw_battlefield\(size: Vector2\)[\s\S]*if mode == "battle" and pixel_world != null:[\s\S]*return[\s\S]*super\._draw_battlefield/);
+  assert.match(read("godot/scripts/battle/pixel_world.gd"), /const BATTLEFIELD: Texture2D = preload\("res:\/\/assets\/battlefield-premium\.webp"\)/);
 });
