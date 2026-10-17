@@ -10,7 +10,7 @@ const godot = read("godot/scripts/battle/battle_art_main.gd");
 const project = read("godot/project.godot");
 
 test("new RPG homepage ships actual pixel assets and portrait panels", () => {
-  assert.match(html, /href="\/pixel-ui\.css\?v=field-refresh-20261017"/);
+  assert.match(html, /href="\/pixel-ui\.css\?v=home-ui-20261017"/);
   assert.match(html, /SamkokGo/);
   for (const hero of ["liubei","caocao","sunquan","lvbu"]) {
     assert.match(html, new RegExp('data-hero="' + hero + '"'));
