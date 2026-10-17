@@ -8,7 +8,7 @@
     <title>三國倖存者</title>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
     <link rel="stylesheet" href="/style.css" />
-    <link rel="stylesheet" href="/pixel-ui.css?v=hero-archive-20261016" />
+    <link rel="stylesheet" href="/pixel-ui.css?v=field-refresh-20261017" />
   </head>
   <body>
     <main id="app">
@@ -179,6 +179,14 @@
 
       <div id="toast" class="toast" role="status" aria-live="polite"></div>
       <div id="rotateHint" class="rotate-hint hidden" aria-hidden="true"><span class="rotate-phone"></span></div>
+      <section id="graphicsNotice" class="graphics-notice hidden" role="alertdialog" aria-modal="true" aria-labelledby="graphicsNoticeTitle" aria-describedby="graphicsNoticeBody">
+        <div class="graphics-notice-card">
+          <p class="picker-label">戰場啟動檢查</p>
+          <h2 id="graphicsNoticeTitle">此瀏覽器無法啟動戰鬥畫面</h2>
+          <p id="graphicsNoticeBody">Godot 戰場需要 WebGL 2。房間仍保留在目前畫面；請改用支援 WebGL 2 的 Chrome、Edge 或 Firefox，並開啟瀏覽器硬體加速後再試。</p>
+          <button id="graphicsNoticeClose" class="picker-confirm" type="button">返回房間</button>
+        </div>
+      </section>
     </main>
     <script type="module" src="/main.js"></script>
   </body>
