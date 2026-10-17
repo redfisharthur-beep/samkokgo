@@ -1640,6 +1640,34 @@ function showToast(message) {
   appState.toastTimer = setTimeout(() => ui.toast.classList.remove("show"), 1800);
 }
 
+async function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+      return;
+    }
+    if (!document.documentElement.requestFullscreen) {
+      showToast("此瀏覽器不支援全螢幕");
+      return;
+    }
+    await document.documentElement.requestFullscreen();
+  } catch (error) {
+    console.warn("Fullscreen request failed", error);
+    showToast("無法切換全螢幕，請使用瀏覽器選單");
+  }
+}
+
+function syncFullscreenButtons() {
+  const fullscreen = Boolean(document.fullscreenElement);
+  for (const button of [$("fullscreen"), $("fullscreenGame")]) {
+    if (!button) continue;
+    const label = fullscreen ? "退出全螢幕" : "進入全螢幕";
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.setAttribute("aria-pressed", String(fullscreen));
+  }
+}
+
 function colorCss(hex) { return `#${hex.toString(16).padStart(6, "0")}`; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 function seeded(seed) {
@@ -2195,7 +2223,9 @@ function installControls() {
     }
     catch { showToast("請使用瀏覽器分享功能邀請"); }
   });
-  $("fullscreen").addEventListener("click", () => document.documentElement.requestFullscreen?.().catch(() => {}));
+  for (const button of [$("fullscreen"), $("fullscreenGame")]) {
+    button?.addEventListener("click", toggleFullscreen);
+  }
   $("playAgain").addEventListener("click", quickJoin);
   $("toHome").addEventListener("click", returnHome);
 }
@@ -2206,6 +2236,9 @@ function sendRoomAction(type, extra = {}) {
 }
 
 window.addEventListener("resize", onResize);
+document.addEventListener("fullscreenchange", syncFullscreenButtons);
+document.addEventListener("fullscreenerror", () => showToast("無法切換全螢幕，請使用瀏覽器選單"));
+syncFullscreenButtons();
 installControls();
 initializeGeneralArt();
 ui.specialAbility.replaceChildren(pixelIcon("special", "special-pixel-icon"));

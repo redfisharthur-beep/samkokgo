@@ -175,7 +175,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event is InputEventKey:
 			var exit_key := event as InputEventKey
 			if exit_key.pressed and exit_key.keycode == KEY_ESCAPE:
-				_leave_battle_to_web()
+				var browser_fullscreen: bool = bool(JavaScriptBridge.eval("!!document.fullscreenElement"))
+				if browser_fullscreen:
+					JavaScriptBridge.eval("document.exitFullscreen()")
+				else:
+					_leave_battle_to_web()
 				return
 		if event is InputEventScreenTouch:
 			var exit_touch := event as InputEventScreenTouch
@@ -208,6 +212,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		var touch := event as InputEventScreenTouch
 		if touch.pressed:
+			if mode == "battle" and OS.has_feature("web") and _fullscreen_button_rect().has_point(touch.position):
+				_toggle_web_fullscreen()
+				return
 			if crossplay_mode and mode == "battle" and touch.position.distance_to(Vector2(get_viewport_rect().size.x - 90.0, get_viewport_rect().size.y - 90.0)) < 48.0:
 				if ability_ready_at <= Time.get_unix_time_from_system() * 1000.0:
 					network.send_action({"type": "ability"})
@@ -235,6 +242,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		var mouse := event as InputEventMouseButton
 		if mouse.button_index == MOUSE_BUTTON_LEFT:
 			if mouse.pressed:
+				if mode == "battle" and OS.has_feature("web") and _fullscreen_button_rect().has_point(mouse.position):
+					_toggle_web_fullscreen()
+					return
 				if crossplay_mode and mode == "battle" and mouse.position.distance_to(Vector2(get_viewport_rect().size.x - 90.0, get_viewport_rect().size.y - 90.0)) < 48.0:
 					if ability_ready_at <= Time.get_unix_time_from_system() * 1000.0:
 						network.send_action({"type": "ability"})
@@ -251,6 +261,17 @@ func _unhandled_input(event: InputEvent) -> void:
 				_clear_mouse_movement()
 	if event is InputEventMouseMotion and moving_mouse and mode == "battle":
 		_update_stick((event as InputEventMouseMotion).position)
+
+func _fullscreen_button_rect() -> Rect2:
+	var size := get_viewport_rect().size
+	return Rect2(Vector2(size.x - 168.0, 112.0), Vector2(154.0, 46.0))
+
+func _toggle_web_fullscreen() -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("if (document.fullscreenElement) { document.exitFullscreen(); } else if (document.documentElement.requestFullscreen) { document.documentElement.requestFullscreen().catch(() => {}); }")
+	else:
+		var mode_value := DisplayServer.WINDOW_MODE_WINDOWED if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN else DisplayServer.WINDOW_MODE_FULLSCREEN
+		DisplayServer.window_set_mode(mode_value)
 
 func _refresh_keyboard_direction() -> void:
 	var up := held_movement_keys.has(KEY_W) or held_movement_keys.has(KEY_UP)
