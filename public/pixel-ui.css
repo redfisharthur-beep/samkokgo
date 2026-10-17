@@ -727,3 +727,6 @@ html,body,#app { background: #102e46; color: #f8ebca; }
   .home-screen .home-actions > button { min-width:0; height:42px; padding:0 8px; font-size:11px; }
   .home-screen .home-actions > button svg { width:17px; height:17px; }
 }
+
+/* Keep the fullscreen control available over the pixel-art home screen. */
+.home-screen .home-controls { display:flex !important; position:absolute; z-index:12; top:auto; right:max(18px,env(safe-area-inset-right)); bottom:max(18px,env(safe-area-inset-bottom)); }
