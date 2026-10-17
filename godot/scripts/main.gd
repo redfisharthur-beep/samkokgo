@@ -131,7 +131,9 @@ func _process(delta: float) -> void:
 			if randf() < minf(0.35, elapsed / 240.0):
 				_spawn_enemy(true)
 
-		if elapsed >= 300.0 and not boss_spawned:
+		# Put the first boss inside the opening stretch so the run has an
+		# immediate objective instead of five minutes of passive farming.
+		if elapsed >= 120.0 and not boss_spawned:
 			boss_spawned = true
 			boss_hp = 1600.0
 			_spawn_enemy(false, true)
